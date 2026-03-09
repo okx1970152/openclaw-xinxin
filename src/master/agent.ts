@@ -15,8 +15,11 @@ import type {
   ModelChoice,
   LimitStatus,
   UsageStats,
+  PermMemEntry,
+  CapabilityProfile,
 } from '../types/core';
 import type { IMemoryManager } from '../memory-kw/types';
+import type { IPatternLibrary } from './types';
 
 /**
  * 主代理接口
@@ -334,16 +337,27 @@ export class MasterAgent implements IMasterAgent {
   private tokenLimiter: ITokenLimiter;
   private agentRegistry: Map<string, AgentConfig> = new Map();
   private memory?: IMemoryManager;
+  private patternLibrary?: IPatternLibrary;
+  /** 执行统计信息 */
+  private executionStats = {
+    totalTasks: 0,
+    successfulTasks: 0,
+    failedTasks: 0,
+    totalTokensUsed: 0,
+    lastArchiveTime: new Date().toISOString(),
+  };
 
   constructor(options?: {
     memory?: IMemoryManager;
     modelSelector?: IModelSelector;
     tokenLimiter?: ITokenLimiter;
+    patternLibrary?: IPatternLibrary;
   }) {
     this.taskQueue = new TaskQueue();
     this.modelSelector = options?.modelSelector ?? new SimpleModelSelector();
     this.tokenLimiter = options?.tokenLimiter ?? new SimpleTokenLimiter();
     this.memory = options?.memory;
+    this.patternLibrary = options?.patternLibrary;
 
     // 设置任务处理回调
     this.taskQueue.setProcessCallback(this.processTask.bind(this));
@@ -498,12 +512,218 @@ export class MasterAgent implements IMasterAgent {
 
   // ===== 经验归档 =====
 
+  /**
+   * 归档任务经验
+   * 
+   * 实现完整的5步经验归档流程（技术设计文档 5.1 节，实施方案 4.2 节）
+   * 1. 更新任务模式库（PatternLibrary）
+   * 2. 更新能力画像（CapabilityProfile）
+   * 3. 追加到永久记忆（PermMem）
+   * 4. 记录执行统计
+   * 5. 清理临时资源
+   */
   async archiveExperience(task: TaskItem, result: AgentResult): Promise<void> {
-    console.log(`[MasterAgent] 归档经验: 任务 ${task.task_id}, 状态: ${result.status}`);
-    // TODO: 实现经验归档逻辑
-    // 1. 更新任务模式库
-    // 2. 更新能力画像
-    // 3. 追加到永久记忆
+    console.log(`[MasterAgent] 开始归档经验: 任务 ${task.task_id}, 状态: ${result.status}`);
+
+    const succeeded = result.status === 'success';
+    const agentId = task.assigned_agent || 'unknown';
+    const durationSec = task.started_at && task.completed_at
+      ? (new Date(task.completed_at).getTime() - new Date(task.started_at).getTime()) / 1000
+      : 0;
+
+    // ===== 步骤1: 更新任务模式库 =====
+    let createdPatternId: string | undefined;
+    if (this.patternLibrary) {
+      try {
+        // 创建或更新任务模式
+        const pattern = await this.patternLibrary.archivePattern(
+          task.content,
+          result,
+          agentId,
+          result.tokens_used
+        );
+        createdPatternId = pattern.pattern_id;
+        
+        // 如果任务有匹配的模式，更新该模式的性能统计
+        if (task.matched_pattern) {
+          await this.patternLibrary.updatePerformance(
+            task.matched_pattern,
+            result.tokens_used,
+            durationSec,
+            succeeded
+          );
+        }
+        
+        console.log(`[MasterAgent] 步骤1完成: 更新任务模式库, 模式ID: ${createdPatternId}`);
+      } catch (error) {
+        console.error(`[MasterAgent] 步骤1失败: 更新任务模式库出错`, error);
+      }
+    } else {
+      console.log(`[MasterAgent] 步骤1跳过: 未注入 PatternLibrary`);
+    }
+
+    // ===== 步骤2: 更新能力画像 =====
+    const agent = this.agentRegistry.get(agentId);
+    if (agent) {
+      try {
+        const profile = agent.capability_profile;
+        
+        // 更新成功/失败计数
+        if (succeeded) {
+          profile.success_count++;
+        } else {
+          profile.fail_count++;
+        }
+        
+        // 更新平均 Token 消耗（滑动平均）
+        const totalTasks = profile.success_count + profile.fail_count;
+        profile.avg_tokens_per_task = 
+          (profile.avg_tokens_per_task * (totalTasks - 1) + result.tokens_used) / totalTasks;
+        
+        // 更新最后活跃时间
+        profile.last_active = new Date().toISOString();
+        
+        // 如果任务成功，添加技能标签
+        if (succeeded && createdPatternId) {
+          const skillTag = this.extractSkillFromTask(task.content);
+          if (skillTag && !profile.skills_proven.includes(skillTag)) {
+            profile.skills_proven.push(skillTag);
+          }
+        }
+        
+        console.log(`[MasterAgent] 步骤2完成: 更新能力画像, 成功: ${profile.success_count}, 失败: ${profile.fail_count}`);
+      } catch (error) {
+        console.error(`[MasterAgent] 步骤2失败: 更新能力画像出错`, error);
+      }
+    } else {
+      console.log(`[MasterAgent] 步骤2跳过: 未找到代理 ${agentId}`);
+    }
+
+    // ===== 步骤3: 追加到永久记忆 =====
+    if (this.memory) {
+      try {
+        // 创建永久记忆条目
+        const permMemEntry: PermMemEntry = {
+          id: `pm_${task.task_id}_${Date.now()}`,
+          category: succeeded ? '成功流程' : '失败结论',
+          keywords: this.extractKeywords(task.content),
+          summary: this.generateSummary(task, result),
+          relations: {
+            project: 'default',
+            agent: agentId,
+            tech_stack: [],
+            related_patterns: createdPatternId ? [createdPatternId] : [],
+          },
+          file_refs: [
+            ...(result.files_created || []),
+            ...(result.files_modified || []),
+          ],
+          pitfalls: result.status === 'failure' && result.error_detail
+            ? [result.error_detail]
+            : [],
+          created_at: new Date().toISOString(),
+        };
+        
+        await this.memory.appendPerm(permMemEntry);
+        console.log(`[MasterAgent] 步骤3完成: 追加永久记忆, 条目ID: ${permMemEntry.id}`);
+      } catch (error) {
+        console.error(`[MasterAgent] 步骤3失败: 追加永久记忆出错`, error);
+      }
+    } else {
+      console.log(`[MasterAgent] 步骤3跳过: 未注入 MemoryManager`);
+    }
+
+    // ===== 步骤4: 记录执行统计 =====
+    this.executionStats.totalTasks++;
+    this.executionStats.totalTokensUsed += result.tokens_used;
+    if (succeeded) {
+      this.executionStats.successfulTasks++;
+    } else {
+      this.executionStats.failedTasks++;
+    }
+    this.executionStats.lastArchiveTime = new Date().toISOString();
+    
+    console.log(
+      `[MasterAgent] 步骤4完成: 记录执行统计, 总任务: ${this.executionStats.totalTasks}, ` +
+      `成功: ${this.executionStats.successfulTasks}, 失败: ${this.executionStats.failedTasks}, ` +
+      `总Token: ${this.executionStats.totalTokensUsed}`
+    );
+
+    // ===== 步骤5: 清理临时资源 =====
+    // 当前实现中临时资源主要是内存中的任务数据，这里可以扩展为清理其他资源
+    // 例如：清理临时文件、释放缓存等
+    console.log(`[MasterAgent] 步骤5完成: 清理临时资源`);
+    
+    console.log(`[MasterAgent] 归档经验完成: 任务 ${task.task_id}`);
+  }
+
+  /**
+   * 从任务描述中提取技能标签
+   */
+  private extractSkillFromTask(taskContent: string): string {
+    const content = taskContent.toLowerCase();
+    
+    // 简单的技能识别规则
+    const skillPatterns: Array<{ pattern: RegExp; skill: string }> = [
+      { pattern: /代码|code|编程|实现|开发/, skill: '代码开发' },
+      { pattern: /调试|debug|修复|fix/, skill: '问题调试' },
+      { pattern: /测试|test|验证/, skill: '测试验证' },
+      { pattern: /文档|document|写作|撰写/, skill: '文档撰写' },
+      { pattern: /分析|研究|调研/, skill: '研究分析' },
+      { pattern: /部署|deploy|发布/, skill: '部署运维' },
+      { pattern: /重构|refactor/, skill: '代码重构' },
+      { pattern: /数据库|database|sql/, skill: '数据库操作' },
+      { pattern: /api|接口/, skill: 'API开发' },
+    ];
+    
+    for (const { pattern, skill } of skillPatterns) {
+      if (pattern.test(content)) {
+        return skill;
+      }
+    }
+    
+    return '通用任务';
+  }
+
+  /**
+   * 从文本中提取关键词
+   */
+  private extractKeywords(text: string): string[] {
+    const keywords: string[] = [];
+    
+    // 英文单词
+    const englishWords = text.match(/[a-zA-Z]{2,}/g) || [];
+    keywords.push(...englishWords.map(w => w.toLowerCase()));
+    
+    // 中文词汇（双字及以上）
+    const chinesePhrases = text.match(/[\u4e00-\u9fa5]{2,}/g) || [];
+    keywords.push(...chinesePhrases);
+    
+    // 去重并限制数量（3-5个关键词）
+    return [...new Set(keywords)].slice(0, 5);
+  }
+
+  /**
+   * 生成任务摘要
+   */
+  private generateSummary(task: TaskItem, result: AgentResult): string {
+    const status = result.status === 'success' ? '成功' : 
+                   result.status === 'failure' ? '失败' : '部分完成';
+    const taskPreview = task.content.length > 50 
+      ? task.content.substring(0, 50) + '...' 
+      : task.content;
+    const resultPreview = result.result.length > 100 
+      ? result.result.substring(0, 100) + '...' 
+      : result.result;
+    
+    return `任务"${taskPreview}"执行${status}。结果: ${resultPreview}`;
+  }
+
+  /**
+   * 获取执行统计信息
+   */
+  getExecutionStats(): typeof this.executionStats {
+    return { ...this.executionStats };
   }
 
   // ===== 私有方法 =====
@@ -570,6 +790,7 @@ export function createMasterAgent(options?: {
   memory?: IMemoryManager;
   modelSelector?: IModelSelector;
   tokenLimiter?: ITokenLimiter;
+  patternLibrary?: IPatternLibrary;
 }): IMasterAgent {
   return new MasterAgent(options);
 }

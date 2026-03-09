@@ -14,8 +14,10 @@ import type {
   MemorySlot,
   MemoryConfig,
   MemoryStats,
+  IRefinementEngine,
 } from './types';
 import { IMemoryManager } from './types';
+import { RefinementEngine } from './refine';
 
 /** 默认记忆配置 */
 const DEFAULT_CONFIG: MemoryConfig = {
@@ -37,6 +39,10 @@ export class MemoryManager implements IMemoryManager {
   private tempFiles: Record<MemorySlot, string>;
   private permFile: string;
   private archiveDir: string;
+  /** 最近提练时间 */
+  private lastRefineAt: string | null = null;
+  /** 提练引擎实例 */
+  private refinementEngine: IRefinementEngine;
 
   constructor(config?: Partial<MemoryConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -52,6 +58,9 @@ export class MemoryManager implements IMemoryManager {
     
     // 初始化目录和文件
     this.initialize();
+    
+    // 初始化提练引擎
+    this.refinementEngine = new RefinementEngine();
   }
 
   /**
@@ -155,14 +164,39 @@ export class MemoryManager implements IMemoryManager {
     // 1. 归档旧槽位
     await this.archiveTemp(oldSlot);
     
-    // 2. 清空旧槽位
+    // 2. 触发提练流程（技术设计文档 2.2 节要求）
+    const tempEntries = await this.readTemp(oldSlot);
+    if (tempEntries.length > 0) {
+      try {
+        const result = await this.refinementEngine.refine(
+          tempEntries,
+          'default_agent',
+          'general'
+        );
+        
+        // 将提练结果写入永久记忆
+        for (const entry of result.entries) {
+          await this.appendPerm(entry);
+        }
+        
+        console.log(`[MemoryManager] 提练完成，生成 ${result.entries.length} 条永久记忆`);
+      } catch (error) {
+        console.error('[MemoryManager] 提练失败:', error);
+        // 提练失败不阻断流程，继续执行清空和切换
+      }
+    }
+    
+    // 3. 清空旧槽位
     await this.clearTemp(oldSlot);
     
-    // 3. 切换到新槽位
+    // 4. 切换到新槽位
     this.activeSlot = oldSlot === 1 ? 2 : 1;
     
-    // 4. 保存槽位状态
+    // 5. 保存槽位状态
     this.writeJsonFile(this.slotFilePath, { active_slot: this.activeSlot });
+    
+    // 6. 更新最近提练时间
+    this.lastRefineAt = new Date().toISOString();
     
     console.log(`[MemoryManager] 槽位切换: ${oldSlot} -> ${this.activeSlot}`);
   }
@@ -285,6 +319,7 @@ export class MemoryManager implements IMemoryManager {
       perm_mem_count: permEntries.length,
       active_slot: this.activeSlot,
       archive_count: fs.readdirSync(this.archiveDir).length,
+      last_refine_at: this.lastRefineAt || undefined,
     };
   }
 }

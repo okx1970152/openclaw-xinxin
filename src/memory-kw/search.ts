@@ -11,8 +11,10 @@ import * as path from 'path';
 import type {
   SearchResult,
   IndexStats,
+  PermMemCategory,
 } from '../types/core';
-import type { ISearchEngine, PermMemEntry } from './types';
+import type { ISearchEngine } from './types';
+import type { PermMemEntry } from './types';
 
 /**
  * 检索引擎配置
@@ -26,6 +28,8 @@ export interface SearchConfig {
   maxResults: number;
   /** 最小匹配分数 */
   minMatchScore: number;
+  /** 是否使用 nodejieba 中文分词（如果可用） */
+  useJieba: boolean;
 }
 
 /**
@@ -36,7 +40,23 @@ const DEFAULT_CONFIG: SearchConfig = {
   permMemPath: './memory/perm_mem.json',
   maxResults: 10,
   minMatchScore: 0.1,
+  useJieba: true, // 默认尝试使用 nodejieba
 };
+
+// 尝试加载 nodejieba
+let jieba: {
+  cut: (text: string) => string[];
+  extract: (text: string, topN: number) => Array<{ word: string; weight: number }>;
+  load: (dict?: string) => void;
+} | null = null;
+
+try {
+  // 动态加载 nodejieba（可选依赖）
+  jieba = require('nodejieba');
+  console.log('[SearchEngine] nodejieba 中文分词已加载');
+} catch {
+  console.log('[SearchEngine] nodejieba 未安装，使用简单分词');
+}
 
 /**
  * 索引条目
@@ -46,7 +66,7 @@ interface IndexEntry {
   keywords: string[];
   summary: string;
   file_path: string;
-  category: string;
+  category: PermMemCategory | string;
   created_at: string;
 }
 
@@ -66,9 +86,11 @@ export class SearchEngine implements ISearchEngine {
   private entries: Map<string, IndexEntry> = new Map();
   private indexStats: IndexStats;
   private indexReady: boolean = false;
+  private jiebaAvailable: boolean;  // nodejieba 是否可用
 
   constructor(config?: Partial<SearchConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.jiebaAvailable = jieba !== null && this.config.useJieba;
     this.indexStats = {
       total_files: 0,
       total_keywords: 0,
@@ -302,30 +324,54 @@ export class SearchEngine implements ISearchEngine {
 
   /**
    * 分词
+   * 实施方案 6.1 节要求：query → nodejieba 分词 → 关键词倒排索引查询
    */
   private tokenize(text: string): string[] {
-    // 简单的分词实现
-    // 支持中英文混合
     const terms: string[] = [];
     
     // 英文单词
     const englishWords = text.match(/[a-zA-Z]+/g) || [];
     terms.push(...englishWords);
     
-    // 中文分词（简单按字符）
-    const chineseChars = text.match(/[\u4e00-\u9fa5]+/g) || [];
-    for (const phrase of chineseChars) {
-      // 双字词组
-      for (let i = 0; i < phrase.length - 1; i++) {
-        terms.push(phrase.substring(i, i + 2));
+    // 中文分词
+    const chinesePhrases = text.match(/[\u4e00-\u9fa5]+/g) || [];
+    
+    if (this.jiebaAvailable && jieba) {
+      // 使用 nodejieba 进行专业中文分词
+      try {
+        for (const phrase of chinesePhrases) {
+          const cutResult = jieba.cut(phrase);
+          terms.push(...cutResult);
+        }
+      } catch (error) {
+        // jieba 分词失败，回退到简单分词
+        console.warn('[SearchEngine] jieba 分词失败，回退到简单分词:', error);
+        terms.push(...this.simpleChineseTokenize(chinesePhrases.join('')));
       }
-      // 单字也保留
-      for (const char of phrase) {
-        terms.push(char);
-      }
+    } else {
+      // 使用简单分词（双字滑动窗口）
+      terms.push(...this.simpleChineseTokenize(chinesePhrases.join('')));
     }
 
     return [...new Set(terms.map(t => t.toLowerCase()))];
+  }
+
+  /**
+   * 简单中文分词（双字滑动窗口 + 单字）
+   */
+  private simpleChineseTokenize(text: string): string[] {
+    const terms: string[] = [];
+    
+    // 双字词组
+    for (let i = 0; i < text.length - 1; i++) {
+      terms.push(text.substring(i, i + 2));
+    }
+    // 单字也保留
+    for (const char of text) {
+      terms.push(char);
+    }
+
+    return terms;
   }
 
   /**

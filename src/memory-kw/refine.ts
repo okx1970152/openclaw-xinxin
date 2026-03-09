@@ -13,8 +13,10 @@ import type {
   ValidationReport,
   PermMemCategory,
   RelationTag,
+  ConfirmationStrategy,
 } from '../types/core';
 import type { IRefinementEngine } from './types';
+import { FourStepValidator } from './validate';
 
 /**
  * 提练配置
@@ -28,6 +30,10 @@ export interface RefinementConfig {
   keywordCountRange: [number, number];
   /** 是否自动验证 */
   autoValidate: boolean;
+  /** 是否使用 LLM 增强提炼 */
+  useLLMExtraction: boolean;
+  /** LLM API 端点（可选） */
+  llmApiEndpoint?: string;
 }
 
 /**
@@ -38,6 +44,7 @@ const DEFAULT_CONFIG: RefinementConfig = {
   maxSummaryLength: 200,
   keywordCountRange: [3, 5],
   autoValidate: true,
+  useLLMExtraction: true,
 };
 
 /**
@@ -45,9 +52,11 @@ const DEFAULT_CONFIG: RefinementConfig = {
  */
 export class RefinementEngine implements IRefinementEngine {
   private config: RefinementConfig;
+  private validator: FourStepValidator;
 
   constructor(config?: Partial<RefinementConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    this.validator = new FourStepValidator();
   }
 
   /**
@@ -61,14 +70,24 @@ export class RefinementEngine implements IRefinementEngine {
     // 1. 分析临时记忆内容
     const analysis = this.analyzeContent(rawContent);
     
-    // 2. 提练永久记忆条目
+    // 2. 提练永久记忆条目（支持 LLM 增强）
     const entries = await this.extractEntries(rawContent, agentId, agentDomain, analysis);
     
-    // 3. 验证提练结果
-    const validation = this.validateEntries(entries, rawContent);
+    // 3. 使用独立验证器验证提练结果
+    let validation: ValidationReport;
+    if (this.config.autoValidate) {
+      const rawContentStr = rawContent.map(e => e.content).join('\n');
+      const registryPath = './memory/registry.json';
+      // 对每个条目进行验证
+      const validationResults = await this.validator.validateBatch(entries, rawContentStr, registryPath);
+      // 汇总验证结果
+      validation = this.aggregateValidationResults(validationResults);
+    } else {
+      validation = { passed: true, severity: 'ok', checks: [], auto_fixes: [] };
+    }
     
-    // 4. 判断是否需要确认
-    const requiresConfirmation = this.needsConfirmation(
+    // 4. 判断确认策略（返回 ConfirmationStrategy 而非 boolean）
+    const confirmationStrategy = this.getConfirmationStrategy(
       analysis.totalTokens,
       analysis.hasMatchedPattern,
       analysis.taskSucceeded
@@ -80,8 +99,38 @@ export class RefinementEngine implements IRefinementEngine {
     return {
       entries,
       validation,
-      requires_confirmation: requiresConfirmation,
+      requires_confirmation: confirmationStrategy !== 'auto',
       archived_path: archivedPath,
+    };
+  }
+
+  /**
+   * 汇总验证结果
+   */
+  private aggregateValidationResults(
+    results: Map<string, ValidationReport>
+  ): ValidationReport {
+    const allChecks: ValidationReport['checks'] = [];
+    const allAutoFixes: string[] = [];
+    let overallSeverity: ValidationReport['severity'] = 'ok';
+    let allPassed = true;
+
+    for (const [, report] of results) {
+      allChecks.push(...report.checks);
+      allAutoFixes.push(...report.auto_fixes);
+      if (report.severity === 'major') {
+        overallSeverity = 'major';
+        allPassed = false;
+      } else if (report.severity === 'minor' && overallSeverity === 'ok') {
+        overallSeverity = 'minor';
+      }
+    }
+
+    return {
+      passed: allPassed,
+      severity: overallSeverity,
+      checks: allChecks,
+      auto_fixes: allAutoFixes,
     };
   }
 
@@ -141,6 +190,15 @@ export class RefinementEngine implements IRefinementEngine {
   ): Promise<PermMemEntry[]> {
     const entries: PermMemEntry[] = [];
 
+    // 如果启用 LLM 增强，使用 LLM 提取
+    if (this.config.useLLMExtraction) {
+      const llmExtracted = await this.extractWithLLM(content, agentId, agentDomain, analysis);
+      if (llmExtracted.length > 0) {
+        return llmExtracted;
+      }
+    }
+
+    // 回退到正则提取
     // 提取用户意图
     const userIntents = this.extractUserIntents(content);
     
@@ -209,6 +267,152 @@ export class RefinementEngine implements IRefinementEngine {
   }
 
   /**
+   * 使用 LLM 增强提取
+   * 实施方案 3.3 节的七步提练流程
+   */
+  private async extractWithLLM(
+    content: TempMemEntry[],
+    agentId: string,
+    agentDomain: string,
+    analysis: ContentAnalysis
+  ): Promise<PermMemEntry[]> {
+    // 构建结构化提练模板
+    const prompt = this.buildRefinementPrompt(content, agentId, agentDomain);
+    
+    try {
+      // 调用 LLM API
+      const response = await this.callLLM(prompt);
+      
+      // 解析 LLM 响应
+      return this.parseLLMResponse(response, agentId, agentDomain, analysis);
+    } catch (error) {
+      console.warn('[RefinementEngine] LLM 提取失败，回退到正则提取:', error);
+      return []; // 返回空数组，触发回退逻辑
+    }
+  }
+
+  /**
+   * 构建提练提示词
+   */
+  private buildRefinementPrompt(
+    content: TempMemEntry[],
+    agentId: string,
+    agentDomain: string
+  ): string {
+    const contentText = content.map(e => `[${e.role}]: ${e.content}`).join('\n\n');
+    
+    return `请从以下对话记录中提取永久记忆条目。
+
+## 输入信息
+- 代理ID: ${agentId}
+- 领域: ${agentDomain}
+- 对话记录:
+${contentText}
+
+## 输出要求
+请以 JSON 格式输出一个记忆条目，包含以下字段：
+{
+  "keywords": ["关键词1", "关键词2", "关键词3"],  // 3-5个核心关键词
+  "summary": "摘要内容，不超过200字",
+  "category": "成功流程|失败结论|子代理能力",  // 根据任务结果选择
+  "tech_stack": ["技术1", "技术2"],  // 涉及的技术栈
+  "file_refs": ["文件路径1"],  // 实际提及的文件路径
+  "pitfalls": ["避坑点1"]  // 如有失败，提取教训
+}
+
+只输出 JSON，不要有其他内容。`;
+  }
+
+  /**
+   * 调用 LLM API
+   */
+  private async callLLM(prompt: string): Promise<string> {
+    const endpoint = this.config.llmApiEndpoint || process.env.LLM_API_ENDPOINT || 'https://api.anthropic.com/v1/messages';
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('未配置 ANTHROPIC_API_KEY');
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [
+          { role: 'user', content: prompt }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM API 调用失败: ${response.status}`);
+    }
+
+    const data = await response.json() as { content?: Array<{ text?: string }> };
+    return data.content?.[0]?.text || '';
+  }
+
+  /**
+   * 解析 LLM 响应
+   */
+  private parseLLMResponse(
+    response: string,
+    agentId: string,
+    agentDomain: string,
+    analysis: ContentAnalysis
+  ): PermMemEntry[] {
+    const entries: PermMemEntry[] = [];
+    
+    try {
+      // 提取 JSON
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return [];
+      }
+      
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        keywords?: string[];
+        summary?: string;
+        category?: string;
+        tech_stack?: string[];
+        file_refs?: string[];
+        pitfalls?: string[];
+      };
+      
+      // 创建条目
+      const entry: PermMemEntry = {
+        id: `pm_llm_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        category: (['成功流程', '失败结论', '子代理能力'].includes(parsed.category || '') 
+          ? parsed.category 
+          : (analysis.taskSucceeded ? '成功流程' : '失败结论')) as PermMemCategory,
+        keywords: parsed.keywords?.slice(0, 5) || [],
+        summary: (parsed.summary || '').substring(0, this.config.maxSummaryLength),
+        relations: {
+          project: 'default_project',
+          agent: agentId,
+          tech_stack: parsed.tech_stack?.slice(0, 5) || [],
+          related_patterns: [],
+        },
+        file_refs: parsed.file_refs?.slice(0, 10) || [],
+        pitfalls: parsed.pitfalls?.slice(0, 5) || [],
+        created_at: new Date().toISOString(),
+      };
+      
+      entries.push(entry);
+    } catch (e) {
+      console.warn('[RefinementEngine] 解析 LLM 响应失败:', e);
+    }
+    
+    return entries;
+  }
+
+  /**
    * 验证提练结果
    */
   private validateEntries(
@@ -257,24 +461,38 @@ export class RefinementEngine implements IRefinementEngine {
   }
 
   /**
-   * 判断是否需要确认
+   * 判断确认策略
+   * 技术设计文档 3.2 节定义了 ConfirmationStrategy = 'auto' | 'confirm' | 'force_confirm'
+   */
+  private getConfirmationStrategy(
+    tokensUsed: number,
+    hasMatchedPattern: boolean,
+    taskSucceeded: boolean
+  ): ConfirmationStrategy {
+    // 失败任务强制确认
+    if (!taskSucceeded) {
+      return 'force_confirm';
+    }
+
+    // 高消耗新任务需确认
+    if (tokensUsed > this.config.tokenConfirmThreshold && !hasMatchedPattern) {
+      return 'confirm';
+    }
+
+    // 其他情况自动处理
+    return 'auto';
+  }
+
+  /**
+   * 判断是否需要确认（兼容旧接口）
+   * @deprecated 请使用 getConfirmationStrategy
    */
   private needsConfirmation(
     tokensUsed: number,
     hasMatchedPattern: boolean,
     taskSucceeded: boolean
   ): boolean {
-    // 失败任务强制确认
-    if (!taskSucceeded) {
-      return true;
-    }
-
-    // 高消耗新任务需确认
-    if (tokensUsed > this.config.tokenConfirmThreshold && !hasMatchedPattern) {
-      return true;
-    }
-
-    return false;
+    return this.getConfirmationStrategy(tokensUsed, hasMatchedPattern, taskSucceeded) !== 'auto';
   }
 
   // ===== 提取辅助方法 =====

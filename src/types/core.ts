@@ -107,15 +107,17 @@ export interface AgentConfig {
 
 /** 错误码 */
 export type ErrorCode =
-  | 'LLM_TIMEOUT'       // LLM API 超时
-  | 'LLM_RATE_LIMIT'    // LLM API 限流
-  | 'LLM_ERROR'         // LLM API 其他错误
-  | 'TOKEN_LIMIT'       // 达到 Token 上限
-  | 'PERMISSION_DENIED' // 权限不足
-  | 'FILE_NOT_FOUND'    // 文件不存在
-  | 'EXEC_FAILED'       // 命令执行失败
-  | 'MEMORY_OVERFLOW'   // 记忆文件超限
-  | 'UNKNOWN';          // 未知错误
+  | 'LLM_TIMEOUT'        // LLM API 超时
+  | 'LLM_RATE_LIMIT'     // LLM API 限流
+  | 'LLM_ERROR'          // LLM API 其他错误
+  | 'TOKEN_LIMIT'        // 达到 Token 上限
+  | 'PERMISSION_DENIED'  // 权限不足
+  | 'FILE_NOT_FOUND'     // 文件不存在
+  | 'EXEC_FAILED'        // 命令执行失败
+  | 'MEMORY_OVERFLOW'    // 记忆文件超限
+  | 'CANCELLED'          // 任务被取消
+  | 'MAX_RETRY_EXCEEDED' // 重试次数超限
+  | 'UNKNOWN';           // 未知错误
 
 /** 子代理执行结果 */
 export interface AgentResult {

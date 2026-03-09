@@ -27,9 +27,11 @@ export interface ModelConfig {
 }
 
 /**
- * 可用模型列表
+ * 核心模型列表
+ * 实施方案以 Anthropic Claude 为核心（Haiku/Sonnet/Opus）
+ * 这些是模型选择器默认使用的模型
  */
-export const AVAILABLE_MODELS: ModelConfig[] = [
+export const CORE_MODELS: ModelConfig[] = [
   {
     provider: 'anthropic',
     model: 'claude-opus-4-20250514',
@@ -51,6 +53,14 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
     costPer1kTokens: 0.002,
     capabilities: ['simple-tasks', 'quick-responses'],
   },
+];
+
+/**
+ * 扩展模型列表（多厂商支持）
+ * 包括 Google Gemini、OpenAI GPT 等
+ * 用户可通过配置启用这些模型
+ */
+export const EXTENDED_MODELS: ModelConfig[] = [
   {
     provider: 'google',
     model: 'gemini-2.5-pro',
@@ -81,6 +91,19 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
   },
 ];
 
+/**
+ * 所有可用模型
+ * 核心模型 + 扩展模型
+ */
+export const AVAILABLE_MODELS: ModelConfig[] = [...CORE_MODELS, ...EXTENDED_MODELS];
+
+/**
+ * 是否启用扩展模型
+ * 默认 false，只使用核心 Anthropic 模型
+ * 设为 true 可启用多厂商模型支持
+ */
+export const ENABLE_EXTENDED_MODELS = process.env.ENABLE_EXTENDED_MODELS === 'true';
+
 // ===== 模型选择器 =====
 
 /**
@@ -109,13 +132,30 @@ const DEFAULT_SELECTOR_CONFIG: ModelSelectorConfig = {
 };
 
 /**
+ * 模型层级常量
+ * 用于实现渐进升级链
+ */
+const MODEL_HAIKU = 'claude-haiku-4-5-20251001';
+const MODEL_SONNET = 'claude-sonnet-4-20250514';
+const MODEL_OPUS = 'claude-opus-4-20250514';
+
+/**
  * 智能模型选择器
  */
 export class SmartModelSelector implements IModelSelector {
   private config: ModelSelectorConfig;
+  /** 当前使用的模型，用于跟踪升级链 */
+  private currentModel: ModelChoice | null = null;
 
   constructor(config?: Partial<ModelSelectorConfig>) {
     this.config = { ...DEFAULT_SELECTOR_CONFIG, ...config };
+  }
+
+  /**
+   * 获取当前使用的模型
+   */
+  getCurrentModel(): ModelChoice | null {
+    return this.currentModel;
   }
 
   /**
@@ -128,64 +168,72 @@ export class SmartModelSelector implements IModelSelector {
   ): ModelChoice {
     // 1. 检查是否需要升级（失败次数过多）
     if (previousFailures >= this.config.upgradeAfterFailures) {
-      return this.selectUpgradedModel(previousFailures);
+      const upgradedModel = this.selectUpgradedModel(previousFailures);
+      this.currentModel = upgradedModel;
+      return upgradedModel;
     }
 
     // 2. 检查任务复杂度
     const complexity = this.assessComplexity(taskDescription);
 
+    let selectedModel: ModelChoice;
+
     // 3. 有匹配模式且简单任务
     if (hasMatchedPattern && complexity === 'simple') {
-      return {
+      selectedModel = {
         provider: 'anthropic',
-        model: 'claude-haiku-4-5-20251001',
+        model: MODEL_HAIKU,
         reason: '有匹配模式且任务简单，使用 Haiku 节省成本',
       };
     }
-
     // 4. 代码相关任务
-    if (this.isCodeTask(taskDescription)) {
+    else if (this.isCodeTask(taskDescription)) {
       if (complexity === 'complex') {
-        return {
+        selectedModel = {
           provider: 'anthropic',
-          model: 'claude-opus-4-20250514',
+          model: MODEL_OPUS,
           reason: '复杂代码任务，使用 Opus 确保质量',
         };
-      }
-      return {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
-        reason: '代码任务，使用 Sonnet 平衡质量和成本',
-      };
-    }
-
-    // 5. 分析任务
-    if (this.isAnalysisTask(taskDescription)) {
-      if (complexity === 'complex') {
-        return {
+      } else {
+        selectedModel = {
           provider: 'anthropic',
-          model: 'claude-opus-4-20250514',
-          reason: '复杂分析任务，使用 Opus',
+          model: MODEL_SONNET,
+          reason: '代码任务，使用 Sonnet 平衡质量和成本',
         };
       }
-      return {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
-        reason: '分析任务，使用 Sonnet',
-      };
     }
-
+    // 5. 分析任务
+    else if (this.isAnalysisTask(taskDescription)) {
+      if (complexity === 'complex') {
+        selectedModel = {
+          provider: 'anthropic',
+          model: MODEL_OPUS,
+          reason: '复杂分析任务，使用 Opus',
+        };
+      } else {
+        selectedModel = {
+          provider: 'anthropic',
+          model: MODEL_SONNET,
+          reason: '分析任务，使用 Sonnet',
+        };
+      }
+    }
     // 6. 写作任务
-    if (this.isWritingTask(taskDescription)) {
-      return {
+    else if (this.isWritingTask(taskDescription)) {
+      selectedModel = {
         provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL_SONNET,
         reason: '写作任务，使用 Sonnet',
       };
     }
-
     // 7. 默认
-    return this.config.defaultModel;
+    else {
+      selectedModel = this.config.defaultModel;
+    }
+
+    // 更新当前模型跟踪
+    this.currentModel = selectedModel;
+    return selectedModel;
   }
 
   /**
@@ -199,21 +247,74 @@ export class SmartModelSelector implements IModelSelector {
 
   /**
    * 选择升级模型
+   * 实现渐进升级链：Haiku → Sonnet → Opus
+   *
+   * 升级规则（技术设计文档 5.3 节）：
+   * - previousFailures >= 2 且当前是 Haiku → 升级到 Sonnet
+   * - previousFailures >= 2 且当前是 Sonnet → 升级到 Opus
+   * - previousFailures >= 3 或当前是 Opus → 继续使用 Opus
    */
   private selectUpgradedModel(previousFailures: number): ModelChoice {
-    // 根据失败次数升级
+    const currentModelName = this.currentModel?.model;
+
+    // 如果没有当前模型记录，默认从 Sonnet 开始升级判断
+    if (!currentModelName) {
+      // 无历史记录时，根据失败次数直接选择
+      if (previousFailures >= 3) {
+        return {
+          provider: 'anthropic',
+          model: MODEL_OPUS,
+          reason: `连续失败 ${previousFailures} 次，无历史记录，升级到 Opus`,
+        };
+      }
+      return {
+        provider: 'anthropic',
+        model: MODEL_SONNET,
+        reason: `连续失败 ${previousFailures} 次，无历史记录，升级到 Sonnet`,
+      };
+    }
+
+    // 渐进升级链逻辑
+    // 当前使用 Haiku，升级到 Sonnet
+    if (currentModelName === MODEL_HAIKU) {
+      return {
+        provider: 'anthropic',
+        model: MODEL_SONNET,
+        reason: `连续失败 ${previousFailures} 次，从 Haiku 升级到 Sonnet`,
+      };
+    }
+
+    // 当前使用 Sonnet，升级到 Opus
+    if (currentModelName === MODEL_SONNET) {
+      return {
+        provider: 'anthropic',
+        model: MODEL_OPUS,
+        reason: `连续失败 ${previousFailures} 次，从 Sonnet 升级到 Opus`,
+      };
+    }
+
+    // 当前已经是 Opus，继续使用 Opus（已经是最高级别）
+    if (currentModelName === MODEL_OPUS) {
+      return {
+        provider: 'anthropic',
+        model: MODEL_OPUS,
+        reason: `连续失败 ${previousFailures} 次，已使用最高级别 Opus，继续尝试`,
+      };
+    }
+
+    // 其他模型（非 Anthropic 系列），根据失败次数选择合适的 Anthropic 模型
     if (previousFailures >= 3) {
       return {
         provider: 'anthropic',
-        model: 'claude-opus-4-20250514',
+        model: MODEL_OPUS,
         reason: `连续失败 ${previousFailures} 次，升级到 Opus`,
       };
     }
 
     return {
       provider: 'anthropic',
-      model: 'claude-opus-4-20250514',
-      reason: `连续失败 ${previousFailures} 次，升级到 Opus`,
+      model: MODEL_SONNET,
+      reason: `连续失败 ${previousFailures} 次，升级到 Sonnet`,
     };
   }
 
