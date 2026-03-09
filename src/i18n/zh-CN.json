@@ -1,0 +1,201 @@
+{
+  "app": {
+    "name": "超级大龙虾",
+    "version": "3.0.0",
+    "description": "智能 AI 助理系统"
+  },
+  "commands": {
+    "create_agent": {
+      "command": "创建代理",
+      "description": "创建新的子代理",
+      "params": {
+        "template": "模板ID（可选）",
+        "domain": "专业领域（可选）"
+      },
+      "success": "代理创建成功：{agentId}",
+      "error": "代理创建失败：{reason}"
+    },
+    "refine_memory": {
+      "command": "提练记忆",
+      "description": "将临时记忆提练为永久记忆",
+      "success": "记忆提练完成，新增 {count} 条永久记忆",
+      "error": "记忆提练失败：{reason}"
+    },
+    "show_status": {
+      "command": "查看状态",
+      "description": "查看系统状态和代理列表",
+      "format": {
+        "total_agents": "总代理数",
+        "active_agents": "活跃代理",
+        "queue_size": "队列任务数",
+        "token_usage": "Token 使用量"
+      }
+    },
+    "rebuild_index": {
+      "command": "重建索引",
+      "description": "重建检索索引",
+      "success": "索引重建完成，共 {count} 个文件",
+      "error": "索引重建失败：{reason}"
+    },
+    "install_skill": {
+      "command": "安装Skill",
+      "description": "安装新的技能模块",
+      "params": {
+        "skill_path": "Skill 路径或URL"
+      },
+      "success": "Skill 安装成功：{skillName}",
+      "error": "Skill 安装失败：{reason}",
+      "security_warning": "安全警告：{findings}"
+    },
+    "retry_refine": {
+      "command": "重新提练",
+      "description": "从备份重新提练记忆",
+      "success": "重新提练完成",
+      "error": "重新提练失败：{reason}"
+    },
+    "clone_agent": {
+      "command": "克隆代理",
+      "description": "克隆现有代理",
+      "params": {
+        "source_agent_id": "源代理ID"
+      },
+      "success": "代理克隆成功：{newAgentId}",
+      "error": "代理克隆失败：{reason}"
+    },
+    "destroy_agent": {
+      "command": "销毁代理",
+      "description": "销毁指定的代理",
+      "params": {
+        "agent_id": "代理ID"
+      },
+      "confirm": "确定要销毁代理 {agentId} 吗？此操作不可恢复。",
+      "success": "代理已销毁：{agentId}",
+      "error": "代理销毁失败：{reason}"
+    },
+    "hibernate_agent": {
+      "command": "休眠代理",
+      "description": "将代理休眠以节省资源",
+      "success": "代理已休眠：{agentId}",
+      "error": "代理休眠失败：{reason}"
+    },
+    "activate_agent": {
+      "command": "激活代理",
+      "description": "唤醒休眠的代理",
+      "success": "代理已激活：{agentId}",
+      "error": "代理激活失败：{reason}"
+    },
+    "export_patterns": {
+      "command": "导出模式",
+      "description": "导出任务模式库",
+      "success": "已导出 {count} 个任务模式"
+    },
+    "import_patterns": {
+      "command": "导入模式",
+      "description": "导入任务模式库",
+      "success": "已导入 {count} 个任务模式",
+      "error": "模式导入失败：{reason}"
+    }
+  },
+  "status": {
+    "agent": {
+      "active": "活跃",
+      "idle": "空闲",
+      "hibernating": "休眠",
+      "destroying": "销毁中"
+    },
+    "task": {
+      "queued": "排队中",
+      "running": "执行中",
+      "completed": "已完成",
+      "failed": "失败"
+    },
+    "priority": {
+      "urgent": "紧急",
+      "normal": "普通",
+      "low": "低优先级"
+    }
+  },
+  "errors": {
+    "LLM_TIMEOUT": "LLM API 请求超时，请稍后重试",
+    "LLM_RATE_LIMIT": "LLM API 请求频率受限，请稍后重试",
+    "LLM_ERROR": "LLM API 调用错误",
+    "TOKEN_LIMIT": "已达到 Token 使用上限",
+    "PERMISSION_DENIED": "权限不足，无法执行此操作",
+    "FILE_NOT_FOUND": "文件不存在：{path}",
+    "EXEC_FAILED": "命令执行失败：{command}",
+    "MEMORY_OVERFLOW": "记忆文件已满，请执行"提练记忆"清理",
+    "UNKNOWN": "未知错误"
+  },
+  "memory": {
+    "temp_memory": "临时记忆",
+    "perm_memory": "永久记忆",
+    "refinement": {
+      "title": "记忆提练",
+      "extracting": "正在提取关键信息...",
+      "validating": "正在验证提练结果...",
+      "confirm_required": "需要确认是否入库",
+      "auto_saved": "自动保存完成",
+      "minor_fixes": "已自动修复部分问题"
+    },
+    "validation": {
+      "file_path_exists": "文件路径真实性检查",
+      "keyword_in_source": "关键词回溯检查",
+      "relations_consistent": "关系一致性检查",
+      "format_compliant": "格式合规检查"
+    }
+  },
+  "security": {
+    "audit": {
+      "title": "安全审查",
+      "layers": {
+        "yaml_permissions": "YAML 权限检查",
+        "dangerous_commands": "危险命令检查",
+        "network_requests": "网络请求检查",
+        "prompt_injection": "Prompt 注入检查",
+        "sensitive_file_access": "敏感文件访问检查"
+      },
+      "risk_levels": {
+        "safe": "安全",
+        "low": "低风险",
+        "medium": "中等风险",
+        "high": "高风险",
+        "critical": "严重风险"
+      }
+    },
+    "warnings": {
+      "permission_mismatch": "声明的权限与功能不匹配",
+      "dangerous_command": "检测到危险命令：{command}",
+      "unexpected_network": "意外的网络请求",
+      "injection_attempt": "检测到 Prompt 注入尝试",
+      "sensitive_access": "尝试访问敏感文件：{path}"
+    }
+  },
+  "model": {
+    "selection": {
+      "haiku": "使用 Haiku（快速响应）",
+      "sonnet": "使用 Sonnet（平衡模式）",
+      "opus": "使用 Opus（深度思考）",
+      "upgrade_reason": "任务失败 {count} 次，升级模型"
+    }
+  },
+  "monitor": {
+    "title": "系统监控",
+    "agents": "代理状态",
+    "tasks": "任务队列",
+    "tokens": "Token 统计",
+    "memory": "记忆使用"
+  },
+  "notifications": {
+    "task_complete": "任务完成：{task}",
+    "task_failed": "任务失败：{task}",
+    "agent_created": "新代理已创建：{agentId}",
+    "memory_full": "记忆空间即将满，请及时提练",
+    "token_warning": "Token 使用量已达 {percent}%"
+  },
+  "confirmations": {
+    "refine_large": "提练内容较大（{size}），是否继续？",
+    "destroy_agent": "确定要销毁代理 {agentId} 吗？此操作不可恢复。",
+    "upgrade_model": "任务多次失败，建议升级模型到 {model}，是否继续？",
+    "import_patterns": "将导入 {count} 个任务模式，可能覆盖现有模式，是否继续？"
+  }
+}

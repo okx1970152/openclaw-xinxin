@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>超级大龙虾 - 系统监控</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #0B1220;
+      --bg-secondary: #1a1f2e;
+      --bg-card: #252b3d;
+      --text-primary: #f1f5f9;
+      --text-secondary: #9AA6B2;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --border: #2d3748;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 30px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      font-size: 32px;
+    }
+
+    .logo h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .logo span {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--bg-card);
+      border-radius: 20px;
+      font-size: 14px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+
+    .status-dot.warning {
+      background: var(--warning);
+    }
+
+    .status-dot.error {
+      background: var(--error);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 24px;
+      border: 1px solid var(--border);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-icon {
+      font-size: 20px;
+    }
+
+    .stat-value {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .stat-label {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 16px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .progress-fill.blue { background: var(--accent); }
+    .progress-fill.green { background: var(--success); }
+    .progress-fill.yellow { background: var(--warning); }
+    .progress-fill.red { background: var(--error); }
+
+    .agent-list {
+      list-style: none;
+    }
+
+    .agent-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .agent-item:last-child {
+      border-bottom: none;
+    }
+
+    .agent-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .agent-avatar {
+      width: 36px;
+      height: 36px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .agent-name {
+      font-weight: 500;
+    }
+
+    .agent-domain {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .agent-status {
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .agent-status.active {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--success);
+    }
+
+    .agent-status.idle {
+      background: rgba(59, 130, 246, 0.2);
+      color: var(--accent);
+    }
+
+    .agent-status.hibernating {
+      background: rgba(154, 166, 178, 0.2);
+      color: var(--text-secondary);
+    }
+
+    .task-queue {
+      list-style: none;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .task-priority {
+      width: 4px;
+      height: 36px;
+      border-radius: 2px;
+    }
+
+    .task-priority.urgent { background: var(--error); }
+    .task-priority.normal { background: var(--accent); }
+    .task-priority.low { background: var(--text-secondary); }
+
+    .task-content {
+      flex: 1;
+      font-size: 14px;
+    }
+
+    .task-meta {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .token-usage {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .usage-item {
+      text-align: center;
+      padding: 16px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+    }
+
+    .usage-value {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .usage-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .memory-visualization {
+      display: flex;
+      gap: 20px;
+      margin-top: 16px;
+    }
+
+    .memory-block {
+      flex: 1;
+      padding: 16px;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+    }
+
+    .memory-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .memory-bar {
+      height: 12px;
+      background: var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .memory-fill {
+      height: 100%;
+      border-radius: 6px;
+      transition: width 0.3s ease;
+    }
+
+    .memory-size {
+      font-size: 14px;
+      margin-top: 8px;
+    }
+
+    .refresh-info {
+      text-align: center;
+      padding: 16px;
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 16px;
+      }
+
+      header {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 28px;
+      }
+
+      .memory-visualization {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <span class="logo-icon">🦞</span>
+        <div>
+          <h1>超级大龙虾</h1>
+          <span>v3.0.0 智能助理系统</span>
+        </div>
+      </div>
+      <div class="status-badge">
+        <div class="status-dot" id="systemStatus"></div>
+        <span id="statusText">系统运行中</span>
+      </div>
+    </header>
+
+    <!-- 核心统计 -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">🤖</span>
+            代理总数
+          </div>
+        </div>
+        <div class="stat-value" id="totalAgents">0</div>
+        <div class="stat-label">活跃: <span id="activeAgents">0</span> | 空闲: <span id="idleAgents">0</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">📋</span>
+            任务队列
+          </div>
+        </div>
+        <div class="stat-value" id="queueSize">0</div>
+        <div class="stat-label">执行中: <span id="runningTasks">0</span></div>
+        <div class="progress-bar">
+          <div class="progress-fill blue" id="queueProgress" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">⚡</span>
+            Token 使用
+          </div>
+        </div>
+        <div class="stat-value" id="tokenUsage">0</div>
+        <div class="stat-label">今日配额</div>
+        <div class="progress-bar">
+          <div class="progress-fill green" id="tokenProgress" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">💾</span>
+            记忆使用
+          </div>
+        </div>
+        <div class="stat-value" id="memoryUsage">0 KB</div>
+        <div class="stat-label">永久: <span id="permMemory">0</span> | 临时: <span id="tempMemory">0</span></div>
+      </div>
+    </div>
+
+    <!-- 代理列表 -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">👥</span>
+            代理状态
+          </div>
+        </div>
+        <ul class="agent-list" id="agentList">
+          <li class="agent-item">
+            <div class="agent-info">
+              <div class="agent-avatar">🔧</div>
+              <div>
+                <div class="agent-name">CodeAgent_001</div>
+                <div class="agent-domain">代码开发与调试</div>
+              </div>
+            </div>
+            <span class="agent-status active">活跃</span>
+          </li>
+          <li class="agent-item">
+            <div class="agent-info">
+              <div class="agent-avatar">🔍</div>
+              <div>
+                <div class="agent-name">ResearchAgent_001</div>
+                <div class="agent-domain">信息检索与分析</div>
+              </div>
+            </div>
+            <span class="agent-status idle">空闲</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- 任务队列 -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">📝</span>
+            任务队列
+          </div>
+        </div>
+        <ul class="task-queue" id="taskQueue">
+          <li class="task-item">
+            <div class="task-priority urgent"></div>
+            <div class="task-content">
+              <div>修复登录页面样式问题</div>
+              <div class="task-meta">CodeAgent_001 · 5分钟前</div>
+            </div>
+          </li>
+          <li class="task-item">
+            <div class="task-priority normal"></div>
+            <div class="task-content">
+              <div>分析用户行为数据</div>
+              <div class="task-meta">ResearchAgent_001 · 12分钟前</div>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 详细统计 -->
+    <div class="grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">📊</span>
+            Token 详细统计
+          </div>
+        </div>
+        <div class="token-usage">
+          <div class="usage-item">
+            <div class="usage-value" id="hourlyTokens">0</div>
+            <div class="usage-label">本小时</div>
+          </div>
+          <div class="usage-item">
+            <div class="usage-value" id="dailyTokens">0</div>
+            <div class="usage-label">今日</div>
+          </div>
+          <div class="usage-item">
+            <div class="usage-value" id="avgPerTask">0</div>
+            <div class="usage-label">平均/任务</div>
+          </div>
+          <div class="usage-item">
+            <div class="usage-value" id="totalTasks">0</div>
+            <div class="usage-label">总任务数</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span class="card-icon">🧠</span>
+            记忆分布
+          </div>
+        </div>
+        <div class="memory-visualization">
+          <div class="memory-block">
+            <div class="memory-label">永久记忆</div>
+            <div class="memory-bar">
+              <div class="memory-fill green" id="permMemoryBar" style="width: 30%"></div>
+            </div>
+            <div class="memory-size"><span id="permMemorySize">15 KB</span> / 50 KB</div>
+          </div>
+          <div class="memory-block">
+            <div class="memory-label">临时记忆</div>
+            <div class="memory-bar">
+              <div class="memory-fill blue" id="tempMemoryBar" style="width: 45%"></div>
+            </div>
+            <div class="memory-size"><span id="tempMemorySize">22 KB</span> / 50 KB</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="refresh-info">
+      数据每 <span id="refreshInterval">5</span> 秒自动刷新 · 上次更新: <span id="lastUpdate">-</span>
+    </div>
+  </div>
+
+  <script>
+    // API 配置
+    const API_BASE = '/api/monitor';
+    const REFRESH_INTERVAL = 5000; // 5秒
+
+    // 模拟数据（API 不可用时使用）
+    const mockData = {
+      agents: [
+        { id: 'CodeAgent_001', name: 'CodeAgent', domain: '代码开发与调试', status: 'active', icon: '🔧' },
+        { id: 'ResearchAgent_001', name: 'ResearchAgent', domain: '信息检索与分析', status: 'idle', icon: '🔍' },
+        { id: 'WriterAgent_001', name: 'WriterAgent', domain: '内容创作与编辑', status: 'idle', icon: '✍️' },
+        { id: 'AssistantAgent_001', name: 'AssistantAgent', domain: '通用助手', status: 'hibernating', icon: '💬' },
+      ],
+      tasks: [
+        { id: 't1', content: '修复登录页面样式问题', agent: 'CodeAgent_001', priority: 'urgent', time: '5分钟前' },
+        { id: 't2', content: '分析用户行为数据', agent: 'ResearchAgent_001', priority: 'normal', time: '12分钟前' },
+        { id: 't3', content: '生成产品文档', agent: 'WriterAgent_001', priority: 'low', time: '30分钟前' },
+      ],
+      tokens: {
+        hourly: 12500,
+        hourlyLimit: 50000,
+        daily: 85000,
+        dailyLimit: 200000,
+        avgPerTask: 2500,
+        total: 1250000,
+      },
+      memory: {
+        perm: 15,
+        permLimit: 50,
+        temp: 22,
+        tempLimit: 50,
+      },
+      runningTasks: 1,
+    };
+
+    // 从 API 获取数据
+    async function fetchMonitorData() {
+      try {
+        const response = await fetch(API_BASE);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        if (result.success && result.data) {
+          return result.data;
+        }
+        throw new Error('Invalid response');
+      } catch (error) {
+        console.warn('[监控面板] API 不可用，使用模拟数据:', error);
+        return null; // 返回 null 表示使用模拟数据
+      }
+    }
+
+    // 更新统计卡片
+    async function updateStats() {
+      const apiData = await fetchMonitorData();
+
+      if (apiData) {
+        // 使用 API 数据
+        updateFromApi(apiData);
+      } else {
+        // 使用模拟数据
+        updateFromMock();
+      }
+    }
+
+    // 从 API 数据更新
+    function updateFromApi(data) {
+      // 代理统计
+      document.getElementById('totalAgents').textContent = data.agents.total;
+      document.getElementById('activeAgents').textContent = data.agents.active;
+      document.getElementById('idleAgents').textContent = data.agents.idle;
+
+      // 任务队列
+      document.getElementById('queueSize').textContent = data.tasks.queued;
+      document.getElementById('runningTasks').textContent = data.tasks.running;
+      document.getElementById('queueProgress').style.width = `${(data.tasks.running / 4) * 100}%`;
+
+      // Token 使用
+      const hourlyPercent = (data.tokens.hourly / data.tokens.hourlyLimit) * 100;
+      document.getElementById('tokenUsage').textContent = formatNumber(data.tokens.daily);
+      document.getElementById('tokenProgress').style.width = `${hourlyPercent}%`;
+      updateTokenBarColor('tokenProgress', hourlyPercent);
+
+      // 记忆使用
+      const totalMemory = data.memory.permUsed + data.memory.tempUsed;
+      document.getElementById('memoryUsage').textContent = `${totalMemory} KB`;
+      document.getElementById('permMemory').textContent = `${data.memory.permUsed} KB`;
+      document.getElementById('tempMemory').textContent = `${data.memory.tempUsed} KB`;
+
+      // Token 详细
+      document.getElementById('hourlyTokens').textContent = formatNumber(data.tokens.hourly);
+      document.getElementById('dailyTokens').textContent = formatNumber(data.tokens.daily);
+      document.getElementById('avgPerTask').textContent = formatNumber(data.tokens.avgPerTask);
+      document.getElementById('totalTasks').textContent = formatNumber(Math.floor(data.tokens.total / data.tokens.avgPerTask) || 0);
+
+      // 记忆进度条
+      const permPercent = (data.memory.permUsed / data.memory.permLimit) * 100;
+      const tempPercent = (data.memory.tempUsed / data.memory.tempLimit) * 100;
+      document.getElementById('permMemoryBar').style.width = `${permPercent}%`;
+      document.getElementById('tempMemoryBar').style.width = `${tempPercent}%`;
+      document.getElementById('permMemorySize').textContent = `${data.memory.permUsed} KB`;
+      document.getElementById('tempMemorySize').textContent = `${data.memory.tempUsed} KB`;
+
+      updateMemoryBarColor('permMemoryBar', permPercent);
+      updateMemoryBarColor('tempMemoryBar', tempPercent);
+
+      // 更新时间
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('zh-CN');
+
+      // 系统状态
+      updateSystemStatus(data.system.status);
+
+      // 更新代理列表
+      updateAgentListFromApi(data.agents.list);
+
+      // 更新任务队列
+      updateTaskQueueFromApi(data.tasks.recent);
+    }
+
+    // 从模拟数据更新
+    function updateFromMock() {
+      // 代理统计
+      const activeAgents = mockData.agents.filter(a => a.status === 'active').length;
+      const idleAgents = mockData.agents.filter(a => a.status === 'idle').length;
+
+      document.getElementById('totalAgents').textContent = mockData.agents.length;
+      document.getElementById('activeAgents').textContent = activeAgents;
+      document.getElementById('idleAgents').textContent = idleAgents;
+
+      // 任务队列
+      document.getElementById('queueSize').textContent = mockData.tasks.length;
+      document.getElementById('runningTasks').textContent = mockData.runningTasks;
+      document.getElementById('queueProgress').style.width = `${(mockData.runningTasks / 4) * 100}%`;
+
+      // Token 使用
+      const hourlyPercent = (mockData.tokens.hourly / mockData.tokens.hourlyLimit) * 100;
+      document.getElementById('tokenUsage').textContent = formatNumber(mockData.tokens.daily);
+      document.getElementById('tokenProgress').style.width = `${hourlyPercent}%`;
+      updateTokenBarColor('tokenProgress', hourlyPercent);
+
+      // 记忆使用
+      const totalMemory = mockData.memory.perm + mockData.memory.temp;
+      document.getElementById('memoryUsage').textContent = `${totalMemory} KB`;
+      document.getElementById('permMemory').textContent = `${mockData.memory.perm} KB`;
+      document.getElementById('tempMemory').textContent = `${mockData.memory.temp} KB`;
+
+      // Token 详细
+      document.getElementById('hourlyTokens').textContent = formatNumber(mockData.tokens.hourly);
+      document.getElementById('dailyTokens').textContent = formatNumber(mockData.tokens.daily);
+      document.getElementById('avgPerTask').textContent = formatNumber(mockData.tokens.avgPerTask);
+      document.getElementById('totalTasks').textContent = formatNumber(Math.floor(mockData.tokens.total / mockData.tokens.avgPerTask));
+
+      // 记忆进度条
+      const permPercent = (mockData.memory.perm / mockData.memory.permLimit) * 100;
+      const tempPercent = (mockData.memory.temp / mockData.memory.tempLimit) * 100;
+      document.getElementById('permMemoryBar').style.width = `${permPercent}%`;
+      document.getElementById('tempMemoryBar').style.width = `${tempPercent}%`;
+      document.getElementById('permMemorySize').textContent = `${mockData.memory.perm} KB`;
+      document.getElementById('tempMemorySize').textContent = `${mockData.memory.temp} KB`;
+
+      updateMemoryBarColor('permMemoryBar', permPercent);
+      updateMemoryBarColor('tempMemoryBar', tempPercent);
+
+      // 更新时间
+      document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString('zh-CN');
+
+      // 系统状态
+      updateSystemStatus();
+    }
+
+    // 更新代理列表
+    function updateAgentList() {
+      const list = document.getElementById('agentList');
+      list.innerHTML = mockData.agents.map(agent => `
+        <li class="agent-item">
+          <div class="agent-info">
+            <div class="agent-avatar">${agent.icon}</div>
+            <div>
+              <div class="agent-name">${agent.id}</div>
+              <div class="agent-domain">${agent.domain}</div>
+            </div>
+          </div>
+          <span class="agent-status ${agent.status}">${getStatusText(agent.status)}</span>
+        </li>
+      `).join('');
+    }
+
+    // 更新任务队列
+    function updateTaskQueue() {
+      const queue = document.getElementById('taskQueue');
+      queue.innerHTML = mockData.tasks.map(task => `
+        <li class="task-item">
+          <div class="task-priority ${task.priority}"></div>
+          <div class="task-content">
+            <div>${task.content}</div>
+            <div class="task-meta">${task.agent} · ${task.time}</div>
+          </div>
+        </li>
+      `).join('');
+    }
+
+    // 辅助函数
+    function formatNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return num.toString();
+    }
+
+    function getStatusText(status) {
+      const statusMap = {
+        active: '活跃',
+        idle: '空闲',
+        hibernating: '休眠',
+        destroying: '销毁中'
+      };
+      return statusMap[status] || status;
+    }
+
+    function updateTokenBarColor(id, percent) {
+      const bar = document.getElementById(id);
+      bar.classList.remove('green', 'yellow', 'red');
+      if (percent > 90) bar.classList.add('red');
+      else if (percent > 70) bar.classList.add('yellow');
+      else bar.classList.add('green');
+    }
+
+    function updateMemoryBarColor(id, percent) {
+      const bar = document.getElementById(id);
+      bar.classList.remove('green', 'yellow', 'red');
+      if (percent > 90) bar.classList.add('red');
+      else if (percent > 70) bar.classList.add('yellow');
+      else bar.classList.add('green');
+    }
+
+    function updateSystemStatus(status) {
+      const statusDot = document.getElementById('systemStatus');
+      const statusText = document.getElementById('statusText');
+
+      statusDot.classList.remove('warning', 'error');
+
+      if (status) {
+        // 从 API 获取的状态
+        if (status === 'error') {
+          statusDot.classList.add('error');
+          statusText.textContent = '资源紧张';
+        } else if (status === 'warning') {
+          statusDot.classList.add('warning');
+          statusText.textContent = '运行中 (资源偏高)';
+        } else {
+          statusText.textContent = '系统运行中';
+        }
+      } else {
+        // 模拟数据状态检查
+        const hourlyPercent = (mockData.tokens.hourly / mockData.tokens.hourlyLimit) * 100;
+        const permPercent = (mockData.memory.perm / mockData.memory.permLimit) * 100;
+
+        if (hourlyPercent > 90 || permPercent > 90) {
+          statusDot.classList.add('error');
+          statusText.textContent = '资源紧张';
+        } else if (hourlyPercent > 70 || permPercent > 70) {
+          statusDot.classList.add('warning');
+          statusText.textContent = '运行中 (资源偏高)';
+        } else {
+          statusText.textContent = '系统运行中';
+        }
+      }
+    }
+
+    // 从 API 数据更新代理列表
+    function updateAgentListFromApi(agents) {
+      const icons = ['🔧', '🔍', '✍️', '💬', '📊', '🔒', '🚀', '⚙️'];
+      const list = document.getElementById('agentList');
+      list.innerHTML = agents.map((agent, i) => `
+        <li class="agent-item">
+          <div class="agent-info">
+            <div class="agent-avatar">${icons[i % icons.length]}</div>
+            <div>
+              <div class="agent-name">${agent.id}</div>
+              <div class="agent-domain">${agent.domain}</div>
+            </div>
+          </div>
+          <span class="agent-status ${agent.status}">${getStatusText(agent.status)}</span>
+        </li>
+      `).join('');
+    }
+
+    // 从 API 数据更新任务队列
+    function updateTaskQueueFromApi(tasks) {
+      const queue = document.getElementById('taskQueue');
+      queue.innerHTML = tasks.map(task => `
+        <li class="task-item">
+          <div class="task-priority ${task.priority}"></div>
+          <div class="task-content">
+            <div>${task.content}</div>
+            <div class="task-meta">${task.assignedAgent || '待分配'} · ${formatTime(task.createdAt)}</div>
+          </div>
+        </li>
+      `).join('');
+    }
+
+    // 格式化时间
+    function formatTime(isoString) {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diff = Math.floor((now - date) / 1000);
+
+      if (diff < 60) return '刚刚';
+      if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`;
+      return `${Math.floor(diff / 86400)}天前`;
+    }
+
+    // 模拟数据变化
+    function simulateDataChange() {
+      // 随机调整 Token 使用
+      mockData.tokens.hourly += Math.floor(Math.random() * 500);
+      mockData.tokens.daily += Math.floor(Math.random() * 1000);
+      mockData.tokens.total += Math.floor(Math.random() * 2000);
+
+      // 随机调整记忆使用
+      mockData.memory.temp = Math.min(50, Math.max(10, mockData.memory.temp + (Math.random() - 0.5) * 2));
+
+      // 随机调整任务队列
+      if (Math.random() > 0.8 && mockData.tasks.length < 10) {
+        mockData.tasks.push({
+          id: `t${Date.now()}`,
+          content: '新任务 - ' + ['代码优化', '数据分析', '文档编写', '问题修复'][Math.floor(Math.random() * 4)],
+          agent: mockData.agents[Math.floor(Math.random() * mockData.agents.length)].id,
+          priority: ['urgent', 'normal', 'low'][Math.floor(Math.random() * 3)],
+          time: '刚刚'
+        });
+      }
+    }
+
+    // 初始化
+    updateStats();
+
+    // 定时刷新
+    setInterval(() => {
+      updateStats();
+    }, REFRESH_INTERVAL);
+  </script>
+</body>
+</html>
