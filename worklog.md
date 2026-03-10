@@ -133,3 +133,108 @@ super-lobster/src/
 - 原版仓库: https://github.com/openclaw/openclaw
 - 改造依据: 《超级大龙虾_OpenClaw深度改造升级实施方案_v3.0.docx》
 - 技术参考: 《超级大龙虾_3.0配套技术设计文档_v2.0.docx》
+
+---
+
+## Phase 2: 问题修复 v2.0 ✅ 已完成
+
+### 修复概述
+
+根据22项问题清单，按优先级（P0→P1→P2）完成了全面修复。
+
+### P0 架构级问题（严重）- 全部完成
+
+| 问题编号 | 描述 | 修复方案 | 状态 |
+|----------|------|----------|------|
+| #1 | agent.ts 用 Simple 版本未用 cost.ts 增强版 | 删除 SimpleModelSelector/SimpleTokenLimiter，导入 SmartModelSelector/TokenLimiter | ✅ |
+| #2 | TaskQueue 与 TaskOrchestrator 重复 | 删除本地 TaskQueue，使用 orchestrate.ts 的 TaskOrchestrator | ✅ |
+| #3 | ContextManager 完全未被集成 | 在 MasterAgent 中初始化并使用 ContextManager | ✅ |
+| #4 | handleMessage 流程不完整 | 添加关键词提取、模式匹配、子代理分配完整流程 | ✅ |
+| #5 | AgentRegistryManager 未使用 | MasterAgent 使用 AgentRegistryManager 管理代理注册 | ✅ |
+
+### P1 接口/功能问题（中等）- 全部完成
+
+| 问题编号 | 描述 | 修复方案 | 状态 |
+|----------|------|----------|------|
+| #6 | IModelSelector 接口重复定义 | 统一从 types.ts 导入，删除重复定义 | ✅ |
+| #7 | getCurrentModel 返回类型不一致 | 修改返回类型为 ModelChoice \| null | ✅ |
+| #8 | IAgentRegistry 方法名不一致 | 更新接口方法名与实现一致 | ✅ |
+| #9 | Config 接口重复定义 | 统一配置定义位置 | ✅ |
+| #10 | types.ts 导入导出顺序异常 | 先导入再导出，删除底部重复导入 | ✅ |
+| #11 | switchSlot 未迁移 pinned 消息 | 在清空前提取 pinned，切换后写入新槽位 | ✅ |
+| #12 | CLI 指令映射不完整 | 添加查看状态、重建索引、安装Skill、重新提练 | ✅ |
+| #13 | TG sendConfirmation 签名不一致 | 添加 sendConfirmationWithCallbacks 方法 | ✅ |
+| #14 | refine.ts LLM 配置硬编码 | 添加 llmModel/llmMaxTokens/llmApiVersion 可配置项 | ✅ |
+| #15 | index.ts 导出不完整 | 补全所有核心模块导出 | ✅ |
+| #16 | 缺少 config.example.yaml | 创建完整配置示例文件 | ✅ |
+
+### P2 逻辑缺陷（轻微）- 已完成
+
+| 问题编号 | 描述 | 修复方案 | 状态 |
+|----------|------|----------|------|
+| #17 | 递归栈溢出风险 | processNext 改用循环替代递归 | ✅ |
+| #19 | matchPattern 查询有写入副作用 | 分离 recordPatternUsage 方法 | ✅ |
+| #20 | 钉住规则正则过于宽泛 | 使用更精确的文件路径匹配正则 | ✅ |
+| #22 | ENABLE_EXTENDED_MODELS 未使用 | 在 getAvailableModels 中使用 | ✅ |
+
+### 修改文件清单
+
+1. **src/master/agent.ts** - 核心重构
+2. **src/master/types.ts** - 接口修复
+3. **src/master/orchestrate.ts** - 递归修复
+4. **src/master/cost.ts** - 扩展模型支持
+5. **src/master/context.ts** - 正则修复
+6. **src/master/patterns.ts** - 副作用分离
+7. **src/memory-kw/types.ts** - 导入顺序修复
+8. **src/memory-kw/memory.ts** - pinned 迁移
+9. **src/memory-kw/refine.ts** - LLM 配置化
+10. **src/cli/adapter.ts** - 指令映射补全
+11. **src/telegram/adapter.ts** - 回调签名修复
+12. **src/index.ts** - 导出补全
+13. **src/i18n/zh-CN.json** - JSON 语法修复
+14. **config.example.yaml** - 新建配置示例
+
+---
+
+## Phase 3: 剩余问题修复 v3.0 ✅ 已完成
+
+### 修复概述
+
+根据问题清单，完成了 P2 级别剩余问题的修复。
+
+### P2 逻辑缺陷（轻微）- 续
+
+| 问题编号 | 描述 | 修复方案 | 状态 |
+|----------|------|----------|------|
+| #21 | 内置模板只有4种非8种 | 扩展 agents/template.ts 为完整的8种模板（CodeAgent, ResearchAgent, WriterAgent, AssistantAgent, DatabaseAgent, TestAgent, DevOpsAgent, SecurityAgent） | ✅ |
+| #23 | extractKeywords 逻辑重复 | 创建 src/shared/keywords.ts 公共工具函数，在 agent.ts 和 patterns.ts 中复用 | ✅ |
+| #24 | 同步 I/O 阻塞事件循环 | 将 memory.ts, patterns.ts, registry.ts 中的同步 I/O 改为 fs.promises 异步版本 | ✅ |
+
+### 新增/修改文件清单
+
+1. **src/agents/template.ts** - #21 扩展为8种内置模板
+2. **src/shared/keywords.ts** - #23 新建公共关键词提取工具
+3. **src/shared/index.ts** - #23 新建模块入口
+4. **src/memory-kw/memory.ts** - #24 同步 I/O 改为异步 I/O
+5. **src/master/patterns.ts** - #23 使用公共函数, #24 异步 I/O
+6. **src/master/registry.ts** - #24 异步 I/O
+
+### 8种内置模板列表
+
+| 模板ID | 名称 | 领域 |
+|--------|------|------|
+| CodeAgent | 代码开发代理 | 代码开发与调试 |
+| ResearchAgent | 研究分析代理 | 信息搜集与分析 |
+| WriterAgent | 写作代理 | 文档撰写与内容创作 |
+| AssistantAgent | 通用助手代理 | 通用任务 |
+| DatabaseAgent | 数据库专家代理 | 数据库管理与优化 |
+| TestAgent | 测试工程师代理 | 测试与质量保障 |
+| DevOpsAgent | DevOps 工程师代理 | DevOps 与基础设施 |
+| SecurityAgent | 安全专家代理 | 安全与合规 |
+
+### 问题修复完成汇总
+
+**所有24项问题已全部修复完成：**
+- P0 (#1-#5): 5项 ✅
+- P1 (#6-#16): 11项 ✅  
+- P2 (#17-#24): 8项 ✅ (含 #18 模型升级链已在 #1 中一并处理)

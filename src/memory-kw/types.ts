@@ -6,6 +6,22 @@
  * 三层记忆结构相关类型
  */
 
+// #10 修复：先导入再导出
+import type {
+  TempMemEntry,
+  PermMemEntry,
+  ValidationReport,
+  RefinementResult,
+  SearchResult,
+  IndexStats,
+  PermMemCategory,
+  RelationTag,
+  ValidationSeverity,
+  ValidationCheckName,
+  ValidationCheck,
+  ConfirmationStrategy,
+} from '../types/core';
+
 // 重新导出核心类型中的记忆相关类型
 export type {
   PermMemCategory,
@@ -18,7 +34,7 @@ export type {
   ValidationReport,
   RefinementResult,
   ConfirmationStrategy,
-} from '../types/core';
+};
 
 /** 记忆槽位编号 */
 export type MemorySlot = 1 | 2;
@@ -175,13 +191,3 @@ export interface ISearchEngine {
   /** 检查索引是否存在 */
   isIndexReady(): boolean;
 }
-
-// 导入需要的类型
-import type {
-  TempMemEntry,
-  PermMemEntry,
-  ValidationReport,
-  RefinementResult,
-  SearchResult,
-  IndexStats,
-} from '../types/core';

@@ -48,9 +48,10 @@ export interface TaskContext {
 
 /**
  * 任务处理器接口
+ * 支持两种调用方式：仅任务参数 或 任务+上下文
  */
 export interface ITaskHandler {
-  execute(task: TaskItem, context: TaskContext): Promise<AgentResult>;
+  execute(task: TaskItem, context?: TaskContext): Promise<AgentResult>;
 }
 
 /**
@@ -152,56 +153,64 @@ export class TaskOrchestrator {
 
   /**
    * 处理下一个任务
+   * #17 修复：改用循环避免递归栈溢出
    */
   private async processNext(): Promise<void> {
-    if (this.queue.length === 0) {
-      this.isProcessing = false;
-      this.currentTask = null;
-      this.context = null;
-      return;
-    }
-
-    this.isProcessing = true;
-    this.currentTask = this.queue.shift()!;
-    
-    console.log(`[Orchestrator] 开始处理任务: ${this.currentTask.task_id}`);
-
-    // 创建执行上下文
-    this.context = {
-      task: this.currentTask,
-      assignedAgent: null,
-      retryCount: 0,
-      startTime: Date.now(),
-    };
-
-    try {
-      // 执行任务
-      const result = await this.executeTask(this.currentTask, this.context);
-      
-      // 更新任务状态
-      this.currentTask.status = result.status === 'success' ? 'completed' : 'failed';
-      this.currentTask.result = result;
-      this.currentTask.completed_at = new Date().toISOString();
-
-      // 调用完成回调
-      if (this.onComplete) {
-        await this.onComplete(this.currentTask, result);
+    // 使用循环而非递归
+    while (this.queue.length > 0 || this.isProcessing) {
+      if (this.queue.length === 0) {
+        this.isProcessing = false;
+        this.currentTask = null;
+        this.context = null;
+        return;
       }
 
-    } catch (error) {
-      console.error(`[Orchestrator] 任务执行异常: ${this.currentTask.task_id}`, error);
+      this.isProcessing = true;
+      this.currentTask = this.queue.shift()!;
       
-      this.currentTask.status = 'failed';
-      this.currentTask.result = {
-        status: 'failure',
-        result: error instanceof Error ? error.message : String(error),
-        tokens_used: 0,
-        error_code: 'EXEC_FAILED',
-      };
-    }
+      console.log(`[Orchestrator] 开始处理任务: ${this.currentTask.task_id}`);
 
-    // 继续处理下一个任务
-    await this.processNext();
+      // 创建执行上下文
+      this.context = {
+        task: this.currentTask,
+        assignedAgent: null,
+        retryCount: 0,
+        startTime: Date.now(),
+      };
+
+      try {
+        // 执行任务
+        const result = await this.executeTask(this.currentTask, this.context);
+        
+        // 更新任务状态
+        this.currentTask.status = result.status === 'success' ? 'completed' : 'failed';
+        this.currentTask.result = result;
+        this.currentTask.completed_at = new Date().toISOString();
+
+        // 调用完成回调
+        if (this.onComplete) {
+          await this.onComplete(this.currentTask, result);
+        }
+
+      } catch (error) {
+        console.error(`[Orchestrator] 任务执行异常: ${this.currentTask.task_id}`, error);
+        
+        this.currentTask.status = 'failed';
+        this.currentTask.result = {
+          status: 'failure',
+          result: error instanceof Error ? error.message : String(error),
+          tokens_used: 0,
+          error_code: 'EXEC_FAILED',
+        };
+      }
+      
+      // 循环继续处理下一个任务
+    }
+    
+    // 队列为空，重置状态
+    this.isProcessing = false;
+    this.currentTask = null;
+    this.context = null;
   }
 
   /**

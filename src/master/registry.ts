@@ -8,6 +8,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+// #24 修复：使用异步 I/O
+import { promises as fsp } from 'fs';
 import type { AgentConfig, AgentRegistry, RegistryEntry, AgentStatus } from '../types/core';
 
 /**
@@ -28,11 +30,13 @@ export class AgentRegistryManager {
 
   /**
    * 初始化注册表
+   * #24 修复：使用异步 I/O
    */
   async initialize(): Promise<void> {
-    if (fs.existsSync(this.registryPath)) {
+    try {
+      await fsp.access(this.registryPath);
       this.registry = await this.loadRegistry();
-    } else {
+    } catch {
       this.registry = {
         version: REGISTRY_VERSION,
         updated_at: new Date().toISOString(),
@@ -44,14 +48,16 @@ export class AgentRegistryManager {
 
   /**
    * 加载注册表
+   * #24 修复：使用异步 I/O
    */
   private async loadRegistry(): Promise<AgentRegistry> {
-    const content = fs.readFileSync(this.registryPath, 'utf-8');
+    const content = await fsp.readFile(this.registryPath, 'utf-8');
     return JSON.parse(content);
   }
 
   /**
    * 保存注册表
+   * #24 修复：使用异步 I/O
    */
   private async saveRegistry(): Promise<void> {
     if (!this.registry) {
@@ -60,7 +66,7 @@ export class AgentRegistryManager {
     
     this.registry.updated_at = new Date().toISOString();
     const content = JSON.stringify(this.registry, null, 2);
-    fs.writeFileSync(this.registryPath, content, 'utf-8');
+    await fsp.writeFile(this.registryPath, content, 'utf-8');
   }
 
   /**

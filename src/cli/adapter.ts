@@ -14,6 +14,7 @@ import type { UnifiedMessage, Attachment } from '../types/core';
 /**
  * 中文指令映射表
  * 技术设计文档 9.1 节定义
+ * #12 修复：补全缺失的4个指令
  */
 export const COMMAND_MAP: Record<string, string> = {
   // 子代理管理
@@ -29,10 +30,17 @@ export const COMMAND_MAP: Record<string, string> = {
   // 记忆管理
   '搜索记忆': 'search_memory',
   '提炼记忆': 'refine_memory',
+  
+  // #12 新增指令
+  '查看状态': 'show_status',
+  '重建索引': 'rebuild_index',
+  '安装Skill': 'install_skill',
+  '重新提练': 'retry_refine',
 };
 
 /**
  * 指令别名映射
+ * #12 修复：添加新指令的别名
  */
 export const COMMAND_ALIASES: Record<string, string> = {
   // 创建代理别名
@@ -70,10 +78,27 @@ export const COMMAND_ALIASES: Record<string, string> = {
   '提练记忆': '提炼记忆',
   '整理记忆': '提炼记忆',
   '提炼': '提炼记忆',
+  
+  // #12 新增指令别名
+  '状态': '查看状态',
+  '显示状态': '查看状态',
+  '系统状态': '查看状态',
+  
+  '重建': '重建索引',
+  '重置索引': '重建索引',
+  '索引重建': '重建索引',
+  
+  '安装技能': '安装Skill',
+  '安装skill': '安装Skill',
+  '安装插件': '安装Skill',
+  
+  '重试提练': '重新提练',
+  '再次提练': '重新提练',
 };
 
 /**
  * 指令帮助文本
+ * #12 修复：添加新指令帮助
  */
 export const COMMAND_HELP: Record<string, string> = {
   'create_agent': '创建新的子代理\n用法: 创建代理 [模板ID] [代理名称]',
@@ -84,6 +109,11 @@ export const COMMAND_HELP: Record<string, string> = {
   'cancel_task': '取消正在执行的任务\n用法: 取消任务 [任务ID]',
   'search_memory': '搜索永久记忆\n用法: 搜索记忆 [关键词]',
   'refine_memory': '提炼临时记忆到永久记忆\n用法: 提炼记忆',
+  // #12 新增帮助
+  'show_status': '查看系统状态\n用法: 查看状态',
+  'rebuild_index': '重建记忆索引\n用法: 重建索引',
+  'install_skill': '安装 Skill 技能包\n用法: 安装Skill [技能包路径]',
+  'retry_refine': '重新执行提炼\n用法: 重新提练',
 };
 
 // ==================== CLI 适配器接口 ====================

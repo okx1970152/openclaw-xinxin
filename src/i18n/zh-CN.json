@@ -123,7 +123,7 @@
     "PERMISSION_DENIED": "权限不足，无法执行此操作",
     "FILE_NOT_FOUND": "文件不存在：{path}",
     "EXEC_FAILED": "命令执行失败：{command}",
-    "MEMORY_OVERFLOW": "记忆文件已满，请执行"提练记忆"清理",
+    "MEMORY_OVERFLOW": "记忆文件已满，请执行「提练记忆」清理",
     "UNKNOWN": "未知错误"
   },
   "memory": {

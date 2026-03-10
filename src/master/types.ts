@@ -78,6 +78,7 @@ export type ModelType = 'haiku' | 'sonnet' | 'opus';
 
 /**
  * 模型选择器接口
+ * #6, #7 修复：统一接口定义，getCurrentModel 返回类型改为 ModelChoice | null
  */
 export interface IModelSelector {
   /**
@@ -94,9 +95,10 @@ export interface IModelSelector {
   ): ModelChoice;
 
   /**
-   * 获取当前模型类型
+   * 获取当前模型
+   * #7 修复：返回类型改为 ModelChoice | null
    */
-  getCurrentModel?(): ModelType;
+  getCurrentModel?(): ModelChoice | null;
 
   /**
    * 升级模型
@@ -106,6 +108,7 @@ export interface IModelSelector {
 
 /**
  * 智能模型选择器配置
+ * #9 修复：统一配置定义位置
  */
 export interface ModelSelectorConfig {
   /** 默认模型 */
@@ -184,32 +187,47 @@ export interface ITaskOrchestrator {
 
 /**
  * 代理注册表接口
+ * #8 修复：方法名与 AgentRegistryManager 实现一致
  */
 export interface IAgentRegistry {
   /**
    * 注册代理
    */
-  register(config: import('../types/core').AgentConfig): Promise<void>;
+  registerAgent(config: import('../types/core').AgentConfig, isClone?: boolean, clonedFrom?: string): Promise<import('../types/core').RegistryEntry>;
 
   /**
    * 注销代理
    */
-  unregister(agentId: string): Promise<void>;
+  unregisterAgent(agentId: string): Promise<boolean>;
 
   /**
    * 获取代理配置
    */
-  get(agentId: string): import('../types/core').AgentConfig | undefined;
+  getAgent(agentId: string): Promise<import('../types/core').RegistryEntry | null>;
 
   /**
    * 获取所有代理
    */
-  getAll(): import('../types/core').AgentConfig[];
+  getAllAgents(): Promise<import('../types/core').RegistryEntry[]>;
 
   /**
    * 更新代理状态
    */
-  updateStatus(agentId: string, status: import('../types/core').AgentStatus): Promise<void>;
+  updateAgentStatus(agentId: string, status: import('../types/core').AgentStatus): Promise<boolean>;
+
+  /**
+   * 按关键词获取代理
+   */
+  getAgentsByKeywords(keywords: string[]): Promise<import('../types/core').RegistryEntry[]>;
+
+  /**
+   * 更新能力画像
+   */
+  updateCapability(agentId: string, updates: {
+    newSkill?: string;
+    success?: boolean;
+    tokensUsed?: number;
+  }): Promise<boolean>;
 }
 
 // ==================== 导出所有类型 ====================

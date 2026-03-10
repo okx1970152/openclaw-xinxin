@@ -20,6 +20,7 @@ import { FourStepValidator } from './validate';
 
 /**
  * 提练配置
+ * #14 修复：LLM 配置改为可配置
  */
 export interface RefinementConfig {
   /** 是否需要人工确认阈值：Token 消耗 */
@@ -34,10 +35,18 @@ export interface RefinementConfig {
   useLLMExtraction: boolean;
   /** LLM API 端点（可选） */
   llmApiEndpoint?: string;
+  // #14 新增：可配置的 LLM 参数
+  /** LLM 模型名称，默认 'claude-haiku-4-5-20251001' */
+  llmModel?: string;
+  /** LLM max_tokens，默认 1024 */
+  llmMaxTokens?: number;
+  /** LLM API 版本，默认 '2023-06-01' */
+  llmApiVersion?: string;
 }
 
 /**
  * 默认配置
+ * #14 修复：添加 LLM 可配置默认值
  */
 const DEFAULT_CONFIG: RefinementConfig = {
   tokenConfirmThreshold: 5000,
@@ -45,6 +54,10 @@ const DEFAULT_CONFIG: RefinementConfig = {
   keywordCountRange: [3, 5],
   autoValidate: true,
   useLLMExtraction: true,
+  // #14 新增默认值
+  llmModel: 'claude-haiku-4-5-20251001',
+  llmMaxTokens: 1024,
+  llmApiVersion: '2023-06-01',
 };
 
 /**
@@ -325,6 +338,7 @@ ${contentText}
 
   /**
    * 调用 LLM API
+   * #14 修复：使用配置中的 LLM 参数
    */
   private async callLLM(prompt: string): Promise<string> {
     const endpoint = this.config.llmApiEndpoint || process.env.LLM_API_ENDPOINT || 'https://api.anthropic.com/v1/messages';
@@ -334,16 +348,21 @@ ${contentText}
       throw new Error('未配置 ANTHROPIC_API_KEY');
     }
 
+    // #14 修复：使用配置值替代硬编码
+    const model = this.config.llmModel || 'claude-haiku-4-5-20251001';
+    const maxTokens = this.config.llmMaxTokens || 1024;
+    const apiVersion = this.config.llmApiVersion || '2023-06-01';
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': apiVersion,
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        model,
+        max_tokens: maxTokens,
         messages: [
           { role: 'user', content: prompt }
         ]

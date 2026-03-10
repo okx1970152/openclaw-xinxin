@@ -1,0 +1,133 @@
+# 超级大龙虾配置文件示例
+# Super Lobster Configuration Example
+# 复制此文件为 config.yaml 并修改配置
+
+# ===== 模型配置 =====
+model:
+  # LLM 提供商
+  provider: "anthropic"
+  # API 密钥（建议使用环境变量）
+  api_key: "${ANTHROPIC_API_KEY}"
+  # 默认模型
+  default_model: "claude-sonnet-4-20250514"
+  # 是否启用扩展模型（多厂商支持）
+  enable_extended_models: false
+
+# ===== 记忆系统配置 =====
+memory:
+  # 记忆引擎：keyword | embedding
+  engine: "keyword"
+  # 记忆存储根目录
+  memory_dir: "./memory"
+  # 临时记忆单槽最大大小（字节），默认 50KB
+  temp_mem_max_size: 51200
+  # 永久记忆最大大小（字节），默认 50KB
+  perm_mem_max_size: 51200
+  # 备份保留天数
+  archive_retention_days: 30
+  # 是否启用自动提炼
+  auto_refine_enabled: true
+  # 触发提炼的临时记忆大小阈值（比例）
+  refine_threshold_ratio: 0.9
+  # 中文分词引擎：nodejieba | jieba | none
+  chinese_segmenter: "jieba"
+
+# ===== Token 限流配置 =====
+token_limits:
+  # 小时限额
+  hourly_limit: 100000
+  # 日限额
+  daily_limit: 500000
+  # 月限额
+  monthly_limit: 10000000
+  # 警告阈值（比例）
+  warning_threshold: 0.8
+
+# ===== 模型选择配置 =====
+model_selector:
+  # 失败升级阈值
+  upgrade_after_failures: 2
+  # 是否考虑成本
+  consider_cost: true
+
+# ===== 提炼引擎配置 =====
+refinement:
+  # Token 消耗确认阈值
+  token_confirm_threshold: 5000
+  # 摘要最大长度
+  max_summary_length: 200
+  # 关键词数量范围
+  keyword_count_range: [3, 5]
+  # 是否自动验证
+  auto_validate: true
+  # 是否使用 LLM 增强提炼
+  use_llm_extraction: true
+  # LLM 模型（用于提炼）
+  llm_model: "claude-haiku-4-5-20251001"
+  # LLM max_tokens
+  llm_max_tokens: 1024
+
+# ===== 上下文管理配置 =====
+context:
+  # 最大 Token 数量
+  max_tokens: 32000
+  # 保留给回复的 Token 数量
+  reserve_tokens: 8000
+  # 剪裁策略：sliding_window | summarize | importance | hybrid
+  pruning_strategy: "hybrid"
+  # 钉住条目的最大比例
+  pinned_ratio: 0.2
+  # 滑动窗口大小
+  window_size: 50
+
+# ===== 子代理配置 =====
+agents:
+  # 模板目录
+  templates_dir: "./templates"
+  # 注册表路径
+  registry_path: "./memory/registry.json"
+  # 默认权限
+  default_permissions:
+    - "file_rw"
+  # 每轮最大 Token
+  max_tokens_per_turn: 4096
+
+# ===== 任务编排配置 =====
+orchestration:
+  # 最大重试次数
+  max_retry_count: 3
+  # 任务超时时间（毫秒）
+  task_timeout_ms: 300000
+  # 是否启用自动降级
+  enable_auto_fallback: true
+
+# ===== 监控配置 =====
+monitor:
+  # 是否启用监控
+  enabled: false
+  # 监控端口
+  port: 3000
+  # 日志级别
+  log_level: "info"
+
+# ===== 入口适配器配置 =====
+adapters:
+  # CLI 适配器
+  cli:
+    enabled: true
+    prompt: "🦞 超级大龙虾> "
+    enable_chinese_commands: true
+  
+  # Telegram 适配器
+  telegram:
+    enabled: false
+    # Bot Token（建议使用环境变量）
+    token: "${TELEGRAM_BOT_TOKEN}"
+    # Webhook URL（可选，不设置则使用轮询）
+    webhook_url: ""
+    # 轮询间隔（毫秒）
+    polling_interval: 1000
+    # 允许的用户 ID 列表（空则允许所有）
+    allowed_user_ids: []
+    # 管理员用户 ID 列表
+    admin_user_ids: []

@@ -238,9 +238,19 @@ export class SmartModelSelector implements IModelSelector {
 
   /**
    * 获取模型配置
+   * #22 修复：根据 ENABLE_EXTENDED_MODELS 返回可用模型
    */
   getModelConfig(model: string): ModelConfig | undefined {
-    return AVAILABLE_MODELS.find(m => m.model === model);
+    const availableModels = this.getAvailableModels();
+    return availableModels.find(m => m.model === model);
+  }
+
+  /**
+   * #22 修复：获取可用的模型列表
+   * 根据 ENABLE_EXTENDED_MODELS 环境变量决定是否包含扩展模型
+   */
+  private getAvailableModels(): ModelConfig[] {
+    return ENABLE_EXTENDED_MODELS ? AVAILABLE_MODELS : CORE_MODELS;
   }
 
   // ===== 私有方法 =====

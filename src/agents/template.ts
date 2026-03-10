@@ -32,6 +32,7 @@ const DEFAULT_CONFIG: TemplateManagerConfig = {
 
 /**
  * 内置模板列表
+ * #21 修复：扩展为完整的8种模板
  */
 const BUILTIN_TEMPLATES: AgentTemplate[] = [
   {
@@ -39,7 +40,7 @@ const BUILTIN_TEMPLATES: AgentTemplate[] = [
     name: '代码开发代理',
     description: '专注于代码编写、调试、重构等开发任务',
     domain: '代码开发与调试',
-    keywords: ['代码', 'code', '编程', 'debug', '重构', '实现', '函数', '类', '模块'],
+    keywords: ['代码', 'code', '编程', 'debug', '重构', '实现', '函数', '类', '模块', '开发'],
     default_permissions: ['file_rw', 'code_exec', 'shell_limited'],
     llm_provider: 'anthropic',
     llm_model: 'claude-sonnet-4-20250514',
@@ -58,7 +59,7 @@ const BUILTIN_TEMPLATES: AgentTemplate[] = [
     name: '研究分析代理',
     description: '专注于信息搜集、分析、总结等研究任务',
     domain: '信息搜集与分析',
-    keywords: ['研究', '分析', '调研', '搜索', '查找', '总结', '报告', '文档'],
+    keywords: ['研究', '分析', '调研', '搜索', '查找', '总结', '报告', '文档', '数据', '统计'],
     default_permissions: ['file_rw', 'network_read'],
     llm_provider: 'anthropic',
     llm_model: 'claude-sonnet-4-20250514',
@@ -77,7 +78,7 @@ const BUILTIN_TEMPLATES: AgentTemplate[] = [
     name: '写作代理',
     description: '专注于文档撰写、内容创作等任务',
     domain: '文档撰写与内容创作',
-    keywords: ['写作', '文档', '文章', '报告', '博客', '说明', 'README', '内容'],
+    keywords: ['写作', '文档', '文章', '报告', '博客', '说明', 'README', '内容', '创作', '编辑'],
     default_permissions: ['file_rw'],
     llm_provider: 'anthropic',
     llm_model: 'claude-sonnet-4-20250514',
@@ -96,7 +97,7 @@ const BUILTIN_TEMPLATES: AgentTemplate[] = [
     name: '通用助手代理',
     description: '处理日常通用任务',
     domain: '通用任务',
-    keywords: ['帮助', '协助', '处理', '完成', '执行', '通用'],
+    keywords: ['帮助', '协助', '处理', '完成', '执行', '通用', '助手', '支持', '服务', '建议'],
     default_permissions: ['file_rw'],
     llm_provider: 'anthropic',
     llm_model: 'claude-haiku-4-5-20251001',
@@ -108,6 +109,83 @@ const BUILTIN_TEMPLATES: AgentTemplate[] = [
 
 工作目录: {{work_dir}}
 请友好、高效地完成任务。`,
+  },
+  // #21 新增4种模板
+  {
+    template_id: 'DatabaseAgent',
+    name: '数据库专家代理',
+    description: '专注于数据库设计、优化和维护',
+    domain: '数据库管理与优化',
+    keywords: ['数据库', 'SQL', '查询', '优化', '索引', 'database', 'MySQL', 'PostgreSQL', 'MongoDB', '表结构'],
+    default_permissions: ['file_rw', 'code_exec'],
+    llm_provider: 'anthropic',
+    llm_model: 'claude-sonnet-4-20250514',
+    max_tokens_per_turn: 6144,
+    system_prompt_template: `你是一个专业的数据库专家代理。你的职责是：
+1. 数据库设计和建模
+2. SQL 查询优化
+3. 索引策略设计
+4. 数据迁移和备份
+
+工作目录: {{work_dir}}
+请确保设计规范、查询高效、数据安全。`,
+  },
+  {
+    template_id: 'TestAgent',
+    name: '测试工程师代理',
+    description: '专注于测试用例设计、自动化测试和质量保障',
+    domain: '测试与质量保障',
+    keywords: ['测试', '用例', '自动化', '质量', 'QA', 'test', 'unit', 'integration', 'e2e', '覆盖率'],
+    default_permissions: ['file_rw', 'code_exec', 'shell_limited'],
+    llm_provider: 'anthropic',
+    llm_model: 'claude-sonnet-4-20250514',
+    max_tokens_per_turn: 6144,
+    system_prompt_template: `你是一个专业的测试工程师代理。你的职责是：
+1. 测试用例设计
+2. 自动化测试开发
+3. 测试覆盖率分析
+4. Bug 报告和追踪
+
+工作目录: {{work_dir}}
+请确保用例全面、边界覆盖、报告清晰。`,
+  },
+  {
+    template_id: 'DevOpsAgent',
+    name: 'DevOps 工程师代理',
+    description: '专注于 CI/CD、容器化和基础设施管理',
+    domain: 'DevOps 与基础设施',
+    keywords: ['DevOps', 'CI/CD', 'Docker', 'Kubernetes', '部署', '流水线', '容器', 'infra', 'pipeline', '自动化'],
+    default_permissions: ['file_rw', 'code_exec', 'shell_limited', 'network_write'],
+    llm_provider: 'anthropic',
+    llm_model: 'claude-sonnet-4-20250514',
+    max_tokens_per_turn: 6144,
+    system_prompt_template: `你是一个专业的 DevOps 工程师代理。你的职责是：
+1. CI/CD 流水线设计
+2. 容器化部署
+3. 基础设施代码化
+4. 监控和告警配置
+
+工作目录: {{work_dir}}
+请确保流程自动化、环境一致、部署可回滚。`,
+  },
+  {
+    template_id: 'SecurityAgent',
+    name: '安全专家代理',
+    description: '专注于安全审计、漏洞检测和安全加固',
+    domain: '安全与合规',
+    keywords: ['安全', '漏洞', '审计', '加密', '认证', 'security', 'vulnerability', 'penetration', '合规', '隐私'],
+    default_permissions: ['file_rw', 'code_exec', 'shell_limited'],
+    llm_provider: 'anthropic',
+    llm_model: 'claude-sonnet-4-20250514',
+    max_tokens_per_turn: 6144,
+    system_prompt_template: `你是一个专业的安全专家代理。你的职责是：
+1. 安全漏洞扫描
+2. 代码安全审计
+3. 安全加固建议
+4. 合规性检查
+
+工作目录: {{work_dir}}
+请确保扫描全面、风险分级、建议可行。`,
   },
 ];
 

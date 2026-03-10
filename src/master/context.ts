@@ -71,10 +71,11 @@ const DEFAULT_PIN_RULES: PinRule[] = [
   },
   {
     condition: (entry) => {
-      // 包含文件路径或代码块
+      // #20 修复：使用更精确的文件路径正则
+      // 要求至少有一个目录分隔符或常见代码文件后缀
       return (
         entry.content.includes('```') ||
-        /[/\w]+\.[\w]+/.test(entry.content) // 文件路径模式
+        /(?:\.\/|\/[\w-]+\/|src\/|lib\/|test\/|docs\/|\.(?:ts|js|json|py|md|yaml|yml|go|rs|java|cpp|c|h))[\w\-./]*/.test(entry.content)
       );
     },
     reason: '包含代码或文件路径',

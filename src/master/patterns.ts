@@ -8,6 +8,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+// #24 修复：使用异步 I/O
+import { promises as fsp } from 'fs';
 import type {
   TaskPattern,
   TaskStrategy,
@@ -15,6 +17,8 @@ import type {
   AgentResult,
 } from '../types/core';
 import type { IPatternLibrary } from './types';
+// #23 修复：导入公共关键词提取函数
+import { extractKeywords as sharedExtractKeywords } from '../shared/keywords';
 
 /**
  * 模式库配置
@@ -63,6 +67,7 @@ export class PatternLibrary implements IPatternLibrary {
   private config: PatternLibraryConfig;
   private patterns: Map<string, TaskPattern> = new Map();
   private index: PatternIndex;
+  private initialized = false;
 
   constructor(config?: Partial<PatternLibraryConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -71,13 +76,29 @@ export class PatternLibrary implements IPatternLibrary {
       last_updated: new Date().toISOString(),
       patterns: [],
     };
-    this.load();
+    // #24 修复：构造函数中启动异步加载
+    this.load().then(() => {
+      this.initialized = true;
+    }).catch(console.error);
+  }
+
+  /**
+   * 确保已初始化
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.load();
+      this.initialized = true;
+    }
   }
 
   /**
    * 匹配任务模式
+   * #19 修复：移除查询操作的写入副作用
    */
   async matchPattern(keywords: string[]): Promise<TaskPattern | null> {
+    await this.ensureInitialized();
+    
     if (keywords.length === 0) {
       return null;
     }
@@ -95,17 +116,29 @@ export class PatternLibrary implements IPatternLibrary {
       }
     }
 
-    if (bestMatch) {
-      // 更新使用计数
-      bestMatch.used_count++;
-      this.savePattern(bestMatch);
-    }
-
+    // #19 修复：不再在此处修改 used_count
+    // used_count 更新移到 recordPatternUsage 方法
     return bestMatch;
   }
 
   /**
+   * #19 新增：记录模式使用情况
+   * 在任务实际执行后调用
+   * #24 修复：使用异步 I/O
+   */
+  async recordPatternUsage(patternId: string): Promise<void> {
+    await this.ensureInitialized();
+    
+    const pattern = this.patterns.get(patternId);
+    if (pattern) {
+      pattern.used_count++;
+      await this.savePattern(pattern);
+    }
+  }
+
+  /**
    * 归档新模式
+   * #24 修复：使用异步 I/O
    */
   async archivePattern(
     taskDescription: string,
@@ -113,6 +146,8 @@ export class PatternLibrary implements IPatternLibrary {
     agentId: string,
     tokensUsed: number
   ): Promise<TaskPattern> {
+    await this.ensureInitialized();
+    
     // 从任务描述提取关键词
     const keywords = this.extractKeywords(taskDescription);
     
@@ -144,8 +179,8 @@ export class PatternLibrary implements IPatternLibrary {
 
     // 保存模式
     this.patterns.set(patternId, pattern);
-    this.savePattern(pattern);
-    this.updateIndex(pattern);
+    await this.savePattern(pattern);
+    await this.updateIndex(pattern);
 
     console.log(`[PatternLibrary] 创建新模式: ${patternId} (${pattern.task_type})`);
     return pattern;
@@ -153,6 +188,7 @@ export class PatternLibrary implements IPatternLibrary {
 
   /**
    * 更新模式性能统计
+   * #24 修复：使用异步 I/O
    */
   async updatePerformance(
     patternId: string,
@@ -160,6 +196,8 @@ export class PatternLibrary implements IPatternLibrary {
     durationSec: number,
     succeeded: boolean
   ): Promise<void> {
+    await this.ensureInitialized();
+    
     const pattern = this.patterns.get(patternId);
     if (!pattern) {
       console.warn(`[PatternLibrary] 模式不存在: ${patternId}`);
@@ -177,27 +215,31 @@ export class PatternLibrary implements IPatternLibrary {
     const currentSuccessRate = succeeded ? 1 : 0;
     perf.success_rate = (perf.success_rate * (window - 1) + currentSuccessRate) / window;
 
-    this.savePattern(pattern);
+    await this.savePattern(pattern);
   }
 
   /**
    * 导出所有模式
    */
   async exportAll(): Promise<TaskPattern[]> {
+    await this.ensureInitialized();
     return Array.from(this.patterns.values());
   }
 
   /**
    * 导入模式
+   * #24 修复：使用异步 I/O
    */
   async importPatterns(patterns: TaskPattern[]): Promise<number> {
+    await this.ensureInitialized();
+    
     let imported = 0;
     
     for (const pattern of patterns) {
       if (!this.patterns.has(pattern.pattern_id)) {
         this.patterns.set(pattern.pattern_id, pattern);
-        this.savePattern(pattern);
-        this.updateIndex(pattern);
+        await this.savePattern(pattern);
+        await this.updateIndex(pattern);
         imported++;
       }
     }
@@ -210,49 +252,56 @@ export class PatternLibrary implements IPatternLibrary {
 
   /**
    * 加载模式库
+   * #24 修复：使用异步 I/O
    */
-  private load(): void {
+  private async load(): Promise<void> {
     // 确保目录存在
-    if (!fs.existsSync(this.config.patternsDir)) {
-      fs.mkdirSync(this.config.patternsDir, { recursive: true });
+    try {
+      await fsp.mkdir(this.config.patternsDir, { recursive: true });
+    } catch {
+      // 目录已存在，忽略
     }
 
     // 加载索引
-    if (fs.existsSync(this.config.indexPath)) {
-      try {
-        const content = fs.readFileSync(this.config.indexPath, 'utf-8');
-        this.index = JSON.parse(content);
-        
-        // 加载所有模式文件
-        for (const entry of this.index.patterns) {
-          const filePath = entry.file_path;
-          if (fs.existsSync(filePath)) {
-            try {
-              const patternContent = fs.readFileSync(filePath, 'utf-8');
-              const pattern = JSON.parse(patternContent) as TaskPattern;
-              this.patterns.set(pattern.pattern_id, pattern);
-            } catch (e) {
-              console.error(`[PatternLibrary] 加载模式文件失败: ${filePath}`, e);
-            }
-          }
+    try {
+      await fsp.access(this.config.indexPath);
+      const content = await fsp.readFile(this.config.indexPath, 'utf-8');
+      this.index = JSON.parse(content);
+      
+      // 加载所有模式文件
+      for (const entry of this.index.patterns) {
+        const filePath = entry.file_path;
+        try {
+          await fsp.access(filePath);
+          const patternContent = await fsp.readFile(filePath, 'utf-8');
+          const pattern = JSON.parse(patternContent) as TaskPattern;
+          this.patterns.set(pattern.pattern_id, pattern);
+        } catch (e) {
+          console.error(`[PatternLibrary] 加载模式文件失败: ${filePath}`, e);
         }
-        
-        console.log(`[PatternLibrary] 加载 ${this.patterns.size} 个模式`);
-      } catch (e) {
-        console.error('[PatternLibrary] 加载索引失败', e);
       }
+      
+      console.log(`[PatternLibrary] 加载 ${this.patterns.size} 个模式`);
+    } catch (e) {
+      // 索引文件不存在，创建新的空索引
+      this.index = {
+        version: '1.0.0',
+        last_updated: new Date().toISOString(),
+        patterns: [],
+      };
     }
   }
 
   /**
    * 保存模式
+   * #24 修复：使用异步 I/O
    */
-  private savePattern(pattern: TaskPattern): void {
+  private async savePattern(pattern: TaskPattern): Promise<void> {
     const filePath = path.join(this.config.patternsDir, `${pattern.pattern_id}.json`);
     
     try {
       const content = JSON.stringify(pattern, null, 2);
-      fs.writeFileSync(filePath, content, 'utf-8');
+      await fsp.writeFile(filePath, content, 'utf-8');
     } catch (e) {
       console.error(`[PatternLibrary] 保存模式失败: ${pattern.pattern_id}`, e);
     }
@@ -260,8 +309,9 @@ export class PatternLibrary implements IPatternLibrary {
 
   /**
    * 更新索引
+   * #24 修复：使用异步 I/O
    */
-  private updateIndex(pattern: TaskPattern): void {
+  private async updateIndex(pattern: TaskPattern): Promise<void> {
     // 检查是否已存在
     const existingIndex = this.index.patterns.findIndex(
       p => p.pattern_id === pattern.pattern_id
@@ -285,7 +335,7 @@ export class PatternLibrary implements IPatternLibrary {
     // 保存索引
     try {
       const content = JSON.stringify(this.index, null, 2);
-      fs.writeFileSync(this.config.indexPath, content, 'utf-8');
+      await fsp.writeFile(this.config.indexPath, content, 'utf-8');
     } catch (e) {
       console.error('[PatternLibrary] 保存索引失败', e);
     }
@@ -314,20 +364,10 @@ export class PatternLibrary implements IPatternLibrary {
 
   /**
    * 提取关键词
+   * #23 修复：使用公共函数
    */
   private extractKeywords(text: string): string[] {
-    const keywords: string[] = [];
-    
-    // 英文单词
-    const englishWords = text.match(/[a-zA-Z]{2,}/g) || [];
-    keywords.push(...englishWords.map(w => w.toLowerCase()));
-    
-    // 中文词汇（双字及以上）
-    const chinesePhrases = text.match(/[\u4e00-\u9fa5]{2,}/g) || [];
-    keywords.push(...chinesePhrases);
-    
-    // 去重并限制数量
-    return [...new Set(keywords)].slice(0, 10);
+    return sharedExtractKeywords(text, 10);
   }
 
   /**

@@ -340,6 +340,56 @@ export class TelegramAdapter implements ITelegramAdapter {
     });
   }
 
+  /**
+   * #13 修复：带回调函数的确认发送
+   * 符合技术设计文档 9.2 节签名要求
+   */
+  async sendConfirmationWithCallbacks(
+    chatId: string | number,
+    message: string,
+    onConfirm: () => Promise<void>,
+    onReject: () => Promise<void>,
+    timeout: number = 60
+  ): Promise<void> {
+    const confirmId = `confirm_${Date.now()}`;
+    const cancelId = `cancel_${Date.now()}`;
+    
+    // 注册回调处理器
+    const originalHandler = this.onCallbackCallback;
+    
+    this.setCallbackHandler(async (callback: TelegramCallbackQuery) => {
+      if (callback.data === confirmId) {
+        await onConfirm();
+        // 恢复原始处理器
+        if (originalHandler) {
+          this.setCallbackHandler(originalHandler);
+        }
+      } else if (callback.data === cancelId) {
+        await onReject();
+        // 恢复原始处理器
+        if (originalHandler) {
+          this.setCallbackHandler(originalHandler);
+        }
+      } else if (originalHandler) {
+        await originalHandler(callback);
+      }
+    });
+    
+    await this.sendConfirmation(chatId, message, {
+      confirmCallback: confirmId,
+      cancelCallback: cancelId,
+      timeout,
+    });
+    
+    // 超时自动清理
+    setTimeout(() => {
+      // 恢复原始处理器
+      if (originalHandler) {
+        this.setCallbackHandler(originalHandler);
+      }
+    }, timeout * 1000);
+  }
+
   // ===== 私有方法 =====
 
   /**
